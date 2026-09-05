@@ -623,8 +623,10 @@
     viewingRecipeId = null; renderRecipeDetail();
     showScanProgress('Reading photo…');
     try{
-      const processed = await preprocessImage(file, 2000);
+      const processed = await preprocessImage(file, 2600);
       const result = await Tesseract.recognize(processed, 'eng', {
+        tessedit_pageseg_mode: '6', // treat photo as one uniform block of text — usually more accurate for a single recipe card/page than full auto layout detection
+        preserve_interword_spaces: '1',
         logger: info=>{
           if(info.status === 'recognizing text'){
             showScanProgress(`Reading photo… ${Math.round((info.progress||0)*100)}%`);
@@ -687,8 +689,9 @@
     document.getElementById('recipe-editor-slot').innerHTML = '';
   }
 
-  // Downscale + grayscale + contrast-stretch large photos client-side.
-  // This meaningfully improves OCR accuracy on real phone photos (shadows, low contrast, etc.)
+  // Downscale + grayscale + binarize (Otsu threshold) large photos client-side.
+  // Clean black/white text on a plain background is what OCR engines read best —
+  // this does a much better job on real phone photos than raw color/grayscale.
   function preprocessImage(file, maxDim){
     return new Promise((resolve, reject)=>{
       const img = new Image();
@@ -707,20 +710,44 @@
 
         const imageData = ctx.getImageData(0, 0, width, height);
         const d = imageData.data;
+        const pixelCount = width*height;
+        const gray = new Uint8ClampedArray(pixelCount);
         let min = 255, max = 0;
-        // First pass: grayscale + find range
-        const gray = new Uint8ClampedArray(width*height);
+
         for(let i=0, p=0; i<d.length; i+=4, p++){
           const g = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
           gray[p] = g;
           if(g < min) min = g;
           if(g > max) max = g;
         }
-        // Second pass: contrast-stretch and write back
+
+        // Contrast-stretch first so the histogram fills the full 0-255 range
         const range = Math.max(max - min, 1);
+        for(let p=0; p<pixelCount; p++){
+          gray[p] = ((gray[p]-min)/range) * 255;
+        }
+
+        // Otsu's method: find the threshold that best splits foreground/background
+        const hist = new Array(256).fill(0);
+        for(let p=0; p<pixelCount; p++) hist[gray[p]]++;
+        let sum = 0;
+        for(let t=0; t<256; t++) sum += t*hist[t];
+        let sumB=0, wB=0, varMax=0, threshold=128;
+        for(let t=0; t<256; t++){
+          wB += hist[t];
+          if(wB===0) continue;
+          const wF = pixelCount - wB;
+          if(wF===0) break;
+          sumB += t*hist[t];
+          const mB = sumB/wB;
+          const mF = (sum-sumB)/wF;
+          const varBetween = wB*wF*(mB-mF)*(mB-mF);
+          if(varBetween > varMax){ varMax = varBetween; threshold = t; }
+        }
+
         for(let i=0, p=0; i<d.length; i+=4, p++){
-          const stretched = ((gray[p]-min)/range) * 255;
-          d[i] = d[i+1] = d[i+2] = stretched;
+          const v = gray[p] > threshold ? 255 : 0;
+          d[i] = d[i+1] = d[i+2] = v;
         }
         ctx.putImageData(imageData, 0, 0);
 
