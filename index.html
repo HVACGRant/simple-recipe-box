@@ -1,4 +1,4 @@
-!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -623,8 +623,8 @@
     viewingRecipeId = null; renderRecipeDetail();
     showScanProgress('Reading photo…');
     try{
-      const shrunk = await shrinkImage(file, 1600);
-      const result = await Tesseract.recognize(shrunk, 'eng', {
+      const processed = await preprocessImage(file, 2000);
+      const result = await Tesseract.recognize(processed, 'eng', {
         logger: info=>{
           if(info.status === 'recognizing text'){
             showScanProgress(`Reading photo… ${Math.round((info.progress||0)*100)}%`);
@@ -633,17 +633,45 @@
       });
       const text = result && result.data && result.data.text ? result.data.text : '';
       if(!text.trim()){
-        showScanError("Couldn't find any readable text in that photo. Try a clearer, well-lit shot, or type it in manually.");
+        showScanError("Couldn't find any readable text in that photo. Try a clearer, well-lit shot, cropped tight to just the recipe, or type it in manually.");
         return;
       }
-      const parsed = parseRecipeText(text);
-      clearScanProgress();
-      openEditor(null, parsed, "We did our best reading the photo — double-check the ingredients, amounts, and steps before saving.");
+      showScanReview(text);
     } catch(err){
       console.error('Scan failed', err);
       showScanError("Something went wrong reading that photo. You can try again or type the recipe in manually.");
     }
   });
+
+  function showScanReview(text){
+    const slot = document.getElementById('recipe-editor-slot');
+    slot.innerHTML = `
+      <div class="panel">
+        <h2>Review scanned text</h2>
+        <p style="color:var(--ink-soft); font-size:13px; margin-bottom:10px;">
+          OCR isn't perfect — fix any garbled words below before we sort it into ingredients and steps.
+          Tip: a straight-on photo, good lighting, and cropping tight to just the recipe reads much better than an angled or dim shot.
+        </p>
+        <textarea id="scan-review-text" style="width:100%; min-height:240px;">${escapeHtml(text)}</textarea>
+        <div class="panel-actions">
+          <button class="btn" id="scan-parse-btn">Looks good — fill in recipe</button>
+          <button class="btn secondary" id="scan-retry-btn">Try a different photo</button>
+          <button class="btn secondary" id="scan-cancel-btn">Cancel</button>
+        </div>
+      </div>
+    `;
+    document.getElementById('scan-parse-btn').addEventListener('click', ()=>{
+      const edited = document.getElementById('scan-review-text').value;
+      const parsed = parseRecipeText(edited);
+      clearScanProgress();
+      openEditor(null, parsed, "Fields were guessed from your scanned text — double-check ingredients, amounts, and steps before saving.");
+    });
+    document.getElementById('scan-retry-btn').addEventListener('click', ()=>{
+      clearScanProgress();
+      document.getElementById('scan-file-input').click();
+    });
+    document.getElementById('scan-cancel-btn').addEventListener('click', clearScanProgress);
+  }
 
   function showScanProgress(msg){
     const slot = document.getElementById('recipe-editor-slot');
@@ -659,8 +687,9 @@
     document.getElementById('recipe-editor-slot').innerHTML = '';
   }
 
-  // Downscale large photos client-side for faster, more reliable OCR.
-  function shrinkImage(file, maxDim){
+  // Downscale + grayscale + contrast-stretch large photos client-side.
+  // This meaningfully improves OCR accuracy on real phone photos (shadows, low contrast, etc.)
+  function preprocessImage(file, maxDim){
     return new Promise((resolve, reject)=>{
       const img = new Image();
       const url = URL.createObjectURL(file);
@@ -673,7 +702,28 @@
         }
         const canvas = document.createElement('canvas');
         canvas.width = width; canvas.height = height;
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const imageData = ctx.getImageData(0, 0, width, height);
+        const d = imageData.data;
+        let min = 255, max = 0;
+        // First pass: grayscale + find range
+        const gray = new Uint8ClampedArray(width*height);
+        for(let i=0, p=0; i<d.length; i+=4, p++){
+          const g = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
+          gray[p] = g;
+          if(g < min) min = g;
+          if(g > max) max = g;
+        }
+        // Second pass: contrast-stretch and write back
+        const range = Math.max(max - min, 1);
+        for(let i=0, p=0; i<d.length; i+=4, p++){
+          const stretched = ((gray[p]-min)/range) * 255;
+          d[i] = d[i+1] = d[i+2] = stretched;
+        }
+        ctx.putImageData(imageData, 0, 0);
+
         canvas.toBlob(blob=>{
           URL.revokeObjectURL(url);
           resolve(blob || file);
