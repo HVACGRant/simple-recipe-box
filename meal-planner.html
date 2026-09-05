@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simple Recipe Box — Meal Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@400;500;600;700&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EEF1E4;
+    --card:#FFFDF7;
+    --ink:#20301F;
+    --ink-soft:#5B6B54;
+    --mustard:#D9A62E;
+    --mustard-deep:#B8871F;
+    --rust:#B4502A;
+    --line:#D8DBC7;
+    --sage-dark:#3C4A34;
+    --radius:4px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Work Sans', sans-serif;
+    font-size:15px;
+    line-height:1.5;
+    min-height:100vh;
+  }
+  h1,h2,h3{
+    font-family:'Zilla Slab', serif;
+    font-weight:600;
+    margin:0;
+    color:var(--sage-dark);
+  }
+  .app{
+    max-width:960px;
+    margin:0 auto;
+    padding:28px 20px 80px;
+  }
+  header.top{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    border-bottom:2px solid var(--sage-dark);
+    padding-bottom:14px;
+    margin-bottom:22px;
+  }
+  header.top h1{
+    font-size:30px;
+    letter-spacing:0.2px;
+  }
+  header.top .tag{
+    font-size:13px;
+    color:var(--ink-soft);
+  }
+  nav.tabs{
+    display:flex;
+    gap:4px;
+    margin-bottom:22px;
+    border-bottom:1px solid var(--line);
+  }
+  nav.tabs button{
+    font-family:'Zilla Slab', serif;
+    font-size:16px;
+    font-weight:600;
+    background:none;
+    border:none;
+    padding:10px 16px;
+    cursor:pointer;
+    color:var(--ink-soft);
+    border-bottom:3px solid transparent;
+    margin-bottom:-1px;
+  }
+  nav.tabs button.active{
+    color:var(--sage-dark);
+    border-bottom:3px solid var(--mustard);
+  }
+  section.view{display:none;}
+  section.view.active{display:block;}
+
+  /* ---------- Recipes ---------- */
+  .recipe-toolbar{
+    display:flex;
+    gap:10px;
+    margin-bottom:18px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+  input[type=text], input[type=number], select, textarea{
+    font-family:'Work Sans', sans-serif;
+    font-size:14px;
+    padding:8px 10px;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    background:var(--card);
+    color:var(--ink);
+  }
+  input:focus, select:focus, textarea:focus{
+    outline:2px solid var(--mustard);
+    outline-offset:1px;
+  }
+  .recipe-toolbar input[type=text]{flex:1; min-width:160px;}
+  .btn{
+    font-family:'Work Sans', sans-serif;
+    font-size:14px;
+    font-weight:600;
+    padding:9px 16px;
+    border-radius:var(--radius);
+    border:1px solid var(--sage-dark);
+    background:var(--sage-dark);
+    color:var(--card);
+    cursor:pointer;
+  }
+  .btn:hover{background:#2c3826;}
+  .btn.secondary{
+    background:var(--card);
+    color:var(--sage-dark);
+  }
+  .btn.secondary:hover{background:#f2f0e2;}
+  .btn.danger{
+    background:var(--card);
+    color:var(--rust);
+    border-color:var(--rust);
+  }
+  .btn.danger:hover{background:#f7e9e2;}
+  .btn.small{padding:5px 10px; font-size:12.5px;}
+
+  .recipe-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(240px,1fr));
+    gap:14px;
+  }
+  .recipe-card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-left:4px solid var(--mustard);
+    padding:14px 14px 12px;
+  }
+  .recipe-card .card-main{cursor:pointer;}
+  .recipe-card:hover{border-left-color:var(--rust);}
+  .recipe-card h3{font-size:18px; margin-bottom:4px;}
+  .recipe-card .meta{font-size:12.5px; color:var(--ink-soft);}
+  .recipe-card .tags{margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;}
+  .chip{
+    font-size:11.5px;
+    padding:2px 8px;
+    background:#EAE7D6;
+    color:var(--sage-dark);
+    border-radius:20px;
+  }
+  .empty{
+    color:var(--ink-soft);
+    font-style:italic;
+    padding:30px 0;
+    text-align:center;
+  }
+  .plan-controls{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-top:12px;
+    padding-top:10px;
+    border-top:1px solid var(--line);
+    font-size:13px;
+  }
+  .plan-controls label{
+    display:flex; align-items:center; gap:6px;
+    color:var(--ink-soft); cursor:pointer;
+  }
+  .plan-controls input[type=checkbox]{width:15px; height:15px; accent-color:var(--sage-dark); cursor:pointer;}
+  .plan-controls select{
+    padding:5px 7px; font-size:13px; flex:1;
+  }
+  .plan-controls select:disabled{opacity:0.5; cursor:not-allowed;}
+
+  /* ---------- Recipe editor (modal-ish inline panel) ---------- */
+  .panel{
+    background:var(--card);
+    border:1px solid var(--line);
+    padding:20px;
+    margin-bottom:20px;
+  }
+  .panel h2{font-size:20px; margin-bottom:14px;}
+  .field-row{display:flex; gap:12px; margin-bottom:12px; flex-wrap:wrap;}
+  .field{display:flex; flex-direction:column; gap:4px;}
+  .field label{font-size:12.5px; color:var(--ink-soft); font-weight:600;}
+  .field.grow{flex:1; min-width:180px;}
+  textarea{resize:vertical; font-family:inherit;}
+  .ing-row{display:grid; grid-template-columns:80px 90px 1fr 32px; gap:8px; margin-bottom:6px; align-items:center;}
+  .ing-row input{width:100%;}
+  .step-row{display:flex; gap:8px; margin-bottom:6px; align-items:flex-start;}
+  .step-row .num{
+    font-family:'Zilla Slab', serif;
+    font-weight:700;
+    color:var(--mustard-deep);
+    width:22px;
+    padding-top:8px;
+    text-align:right;
+  }
+  .step-row textarea{flex:1; min-height:40px;}
+  .remove-x{
+    background:none; border:none; color:var(--rust); cursor:pointer; font-size:16px; line-height:1;
+    padding:6px;
+  }
+  .panel-actions{display:flex; gap:10px; margin-top:16px;}
+  .add-line{
+    background:none; border:1px dashed var(--line); color:var(--ink-soft);
+    padding:6px 10px; font-size:13px; cursor:pointer; border-radius:var(--radius); margin-top:2px;
+  }
+  .add-line:hover{border-color:var(--mustard-deep); color:var(--sage-dark);}
+
+  .recipe-detail .servings-badge{
+    display:inline-block; background:#EAE7D6; color:var(--sage-dark);
+    padding:3px 10px; border-radius:20px; font-size:12.5px; margin-bottom:14px;
+  }
+  .recipe-detail h4{font-family:'Zilla Slab',serif; font-size:15px; margin:16px 0 8px; color:var(--sage-dark);}
+  .recipe-detail ul{margin:0; padding-left:20px;}
+  .recipe-detail ol{margin:0; padding-left:20px;}
+  .recipe-detail li{margin-bottom:6px;}
+
+  /* ---------- Planner ---------- */
+  .plan-header{display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; gap:10px; flex-wrap:wrap;}
+  .plan-header input[type=text]{font-family:'Zilla Slab', serif; font-size:18px; font-weight:600; border:none; background:none; padding:2px 0; color:var(--sage-dark); min-width:180px;}
+  .day-list{display:flex; flex-direction:column; gap:10px;}
+  .day-row{
+    display:flex; align-items:flex-start; gap:14px;
+    background:var(--card); border:1px solid var(--line); padding:12px 14px;
+  }
+  .day-row .day-name{
+    font-family:'Zilla Slab', serif; font-weight:700; font-size:15px;
+    color:var(--sage-dark); width:90px; flex-shrink:0; padding-top:4px;
+  }
+  .day-row .day-items{display:flex; flex-wrap:wrap; gap:8px; flex:1;}
+  .day-chip{
+    display:flex; align-items:center; gap:6px;
+    background:#EAE7D6; color:var(--sage-dark);
+    padding:5px 10px; border-radius:20px; font-size:13px;
+  }
+  .day-chip button{
+    background:none; border:none; color:var(--rust); cursor:pointer; font-size:14px; line-height:1; padding:0;
+  }
+  .day-row.empty-day .day-items{color:var(--ink-soft); font-style:italic; font-size:13px; padding-top:5px;}
+
+  /* ---------- Shopping list ---------- */
+  .shop-columns{display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start;}
+  .shop-col{flex:1; min-width:260px;}
+  .shop-col h3{font-size:16px; margin-bottom:10px; color:var(--sage-dark);}
+  .recipe-shop-group{
+    background:var(--card); border:1px solid var(--line); border-left:4px solid var(--mustard);
+    padding:12px 14px; margin-bottom:14px;
+  }
+  .recipe-shop-group .group-title{
+    font-family:'Zilla Slab', serif; font-weight:600; font-size:15px; color:var(--sage-dark);
+    display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px;
+  }
+  .recipe-shop-group .group-title .day-tag{font-size:12px; color:var(--ink-soft); font-family:'Work Sans', sans-serif; font-weight:600;}
+  ul.shop-list{list-style:none; margin:0; padding:0;}
+  ul.shop-list li{
+    display:flex; align-items:center; gap:10px;
+    padding:6px 4px; border-bottom:1px solid var(--line);
+    font-size:14px;
+  }
+  ul.shop-list li:last-child{border-bottom:none;}
+  ul.shop-list li.checked span.item-text{text-decoration:line-through; color:var(--ink-soft);}
+  ul.shop-list li input[type=checkbox]{width:16px; height:16px; accent-color:var(--sage-dark);}
+  ul.shop-list li .item-text{flex:1;}
+  ul.shop-list li .remove-x{margin-left:auto;}
+  .add-extra{display:flex; gap:8px; margin-top:10px;}
+  .add-extra input{flex:1;}
+
+  footer.hint{
+    margin-top:40px; text-align:center; font-size:12px; color:var(--ink-soft);
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1>Simple Recipe Box</h1>
+    <div class="tag">recipes · weekly plan · shopping list</div>
+  </header>
+
+  <nav class="tabs">
+    <button data-view="recipes" class="active">Recipes</button>
+    <button data-view="planner">Planner</button>
+    <button data-view="shopping">Shopping List</button>
+  </nav>
+
+  <!-- RECIPES VIEW -->
+  <section class="view active" id="view-recipes">
+    <div id="recipe-editor-slot"></div>
+    <div class="recipe-toolbar">
+      <input type="text" id="recipe-search" placeholder="Search recipes or tags…">
+      <button class="btn" id="new-recipe-btn">+ New recipe</button>
+    </div>
+    <div id="recipe-detail-slot"></div>
+    <div class="recipe-grid" id="recipe-grid"></div>
+  </section>
+
+  <!-- PLANNER VIEW -->
+  <section class="view" id="view-planner">
+    <div class="plan-header">
+      <input type="text" id="week-label" value="This week">
+      <button class="btn secondary" id="clear-week-btn">Clear week</button>
+    </div>
+    <div class="day-list" id="day-list"></div>
+  </section>
+
+  <!-- SHOPPING VIEW -->
+  <section class="view" id="view-shopping">
+    <div class="shop-columns">
+      <div class="shop-col">
+        <h3>From this week's recipes</h3>
+        <div id="shop-recipe-groups"></div>
+      </div>
+      <div class="shop-col">
+        <h3>Extras</h3>
+        <ul class="shop-list" id="shop-list-extra"></ul>
+        <div class="add-extra">
+          <input type="text" id="extra-input" placeholder="Add an item…">
+          <button class="btn small" id="add-extra-btn">Add</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="hint">Saved automatically in this browser.</footer>
+</div>
+
+<script>
+(function(){
+  const STORAGE_KEY = 'larder-data-v2';
+  const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+
+  function uid(){ return Math.random().toString(36).slice(2,10); }
+
+  function defaultData(){
+    return {
+      recipes: [
+        {
+          id: uid(), name:'Weeknight Chicken Stir-Fry', servings:4,
+          tags:['dinner','quick'],
+          ingredients:[
+            {name:'chicken breast', amount:1.5, unit:'lb'},
+            {name:'broccoli florets', amount:3, unit:'cup'},
+            {name:'soy sauce', amount:4, unit:'tbsp'},
+            {name:'garlic cloves', amount:3, unit:''},
+            {name:'jasmine rice', amount:2, unit:'cup'}
+          ],
+          steps:[
+            'Cook rice according to package directions.',
+            'Slice chicken thin and stir-fry in a hot pan until browned.',
+            'Add broccoli and garlic, cook 4-5 minutes.',
+            'Stir in soy sauce, simmer 2 minutes, serve over rice.'
+          ]
+        },
+        {
+          id: uid(), name:'Overnight Oats', servings:1,
+          tags:['breakfast','make-ahead'],
+          ingredients:[
+            {name:'rolled oats', amount:0.5, unit:'cup'},
+            {name:'milk', amount:0.5, unit:'cup'},
+            {name:'honey', amount:1, unit:'tbsp'},
+            {name:'blueberries', amount:0.25, unit:'cup'}
+          ],
+          steps:[
+            'Combine oats, milk, and honey in a jar.',
+            'Refrigerate overnight.',
+            'Top with blueberries before eating.'
+          ]
+        }
+      ],
+      // selections: recipeId -> { checked: bool, day: 'Monday'|...|'' }
+      selections: {},
+      weekLabel: 'This week',
+      shoppingChecked: {},   // key "recipeId::idx" -> bool
+      extras: []             // [{id, text, checked}]
+    };
+  }
+
+  function load(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return defaultData();
+      const parsed = JSON.parse(raw);
+      if(!parsed.recipes) return defaultData();
+      if(!parsed.selections) parsed.selections = {};
+      if(!parsed.shoppingChecked) parsed.shoppingChecked = {};
+      if(!parsed.extras) parsed.extras = [];
+      if(!parsed.weekLabel) parsed.weekLabel = 'This week';
+      return parsed;
+    }catch(e){
+      console.error('Load failed', e);
+      return defaultData();
+    }
+  }
+
+  function save(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }catch(e){
+      console.error('Save failed', e);
+    }
+  }
+
+  let state = load();
+  let editingRecipeId = null;
+  let viewingRecipeId = null;
+
+  function getSelection(recipeId){
+    if(!state.selections[recipeId]) state.selections[recipeId] = {checked:false, day:''};
+    return state.selections[recipeId];
+  }
+
+  // ---------- Tabs ----------
+  document.querySelectorAll('nav.tabs button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.remove('active'));
+      document.querySelectorAll('section.view').forEach(v=>v.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('view-'+btn.dataset.view).classList.add('active');
+      if(btn.dataset.view === 'planner') renderPlanner();
+      if(btn.dataset.view === 'shopping') renderShopping();
+    });
+  });
+
+  // ---------- Recipes: list ----------
+  function renderRecipeGrid(){
+    const grid = document.getElementById('recipe-grid');
+    const q = document.getElementById('recipe-search').value.trim().toLowerCase();
+    const filtered = state.recipes.filter(r=>{
+      if(!q) return true;
+      return r.name.toLowerCase().includes(q) || r.tags.some(t=>t.toLowerCase().includes(q));
+    });
+    if(filtered.length===0){
+      grid.innerHTML = '<div class="empty">No recipes yet. Add your first one above.</div>';
+      return;
+    }
+    grid.innerHTML = '';
+    filtered.forEach(r=>{
+      const sel = getSelection(r.id);
+      const card = document.createElement('div');
+      card.className = 'recipe-card';
+      card.innerHTML = `
+        <div class="card-main">
+          <h3>${escapeHtml(r.name)}</h3>
+          <div class="meta">${r.servings} serving${r.servings==1?'':'s'} · ${r.ingredients.length} ingredients</div>
+          <div class="tags">${r.tags.map(t=>`<span class="chip">${escapeHtml(t)}</span>`).join('')}</div>
+        </div>
+        <div class="plan-controls">
+          <label><input type="checkbox" class="sel-check" ${sel.checked?'checked':''}> Add to week</label>
+          <select class="sel-day" ${sel.checked?'':'disabled'}>
+            <option value="">Choose day…</option>
+            ${DAYS.map(d=>`<option value="${d}" ${sel.day===d?'selected':''}>${d}</option>`).join('')}
+          </select>
+        </div>
+      `;
+      card.querySelector('.card-main').addEventListener('click', ()=>{
+        viewingRecipeId = r.id; editingRecipeId = null; renderRecipeDetail();
+      });
+      const checkEl = card.querySelector('.sel-check');
+      const dayEl = card.querySelector('.sel-day');
+      checkEl.addEventListener('click', e=> e.stopPropagation());
+      dayEl.addEventListener('click', e=> e.stopPropagation());
+      checkEl.addEventListener('change', ()=>{
+        sel.checked = checkEl.checked;
+        if(sel.checked && !sel.day) sel.day = 'Monday';
+        if(!sel.checked) sel.day = sel.day; // keep last day choice remembered
+        dayEl.disabled = !sel.checked;
+        dayEl.value = sel.day;
+        save();
+      });
+      dayEl.addEventListener('change', ()=>{
+        sel.day = dayEl.value;
+        save();
+      });
+      grid.appendChild(card);
+    });
+  }
+
+  document.getElementById('recipe-search').addEventListener('input', renderRecipeGrid);
+
+  function escapeHtml(str){
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  // ---------- Recipes: detail view ----------
+  function renderRecipeDetail(){
+    const slot = document.getElementById('recipe-detail-slot');
+    if(!viewingRecipeId){ slot.innerHTML=''; return; }
+    const r = state.recipes.find(x=>x.id===viewingRecipeId);
+    if(!r){ viewingRecipeId=null; slot.innerHTML=''; return; }
+    slot.innerHTML = `
+      <div class="panel recipe-detail">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+          <h2>${escapeHtml(r.name)}</h2>
+          <div style="display:flex; gap:8px;">
+            <button class="btn secondary small" id="edit-recipe-btn">Edit</button>
+            <button class="btn danger small" id="delete-recipe-btn">Delete</button>
+            <button class="btn secondary small" id="close-detail-btn">Close</button>
+          </div>
+        </div>
+        <div class="servings-badge">${r.servings} serving${r.servings==1?'':'s'}</div>
+        <h4>Ingredients</h4>
+        <ul>${r.ingredients.map(i=>`<li>${formatIng(i)}</li>`).join('')}</ul>
+        <h4>Steps</h4>
+        <ol>${r.steps.map(s=>`<li>${escapeHtml(s)}</li>`).join('')}</ol>
+      </div>
+    `;
+    document.getElementById('edit-recipe-btn').addEventListener('click', ()=>{
+      editingRecipeId = r.id; viewingRecipeId=null; renderRecipeDetail(); openEditor(r);
+    });
+    document.getElementById('delete-recipe-btn').addEventListener('click', ()=>{
+      if(confirm(`Delete "${r.name}"? This can't be undone.`)){
+        state.recipes = state.recipes.filter(x=>x.id!==r.id);
+        delete state.selections[r.id];
+        viewingRecipeId = null;
+        save(); renderRecipeGrid(); renderRecipeDetail();
+      }
+    });
+    document.getElementById('close-detail-btn').addEventListener('click', ()=>{
+      viewingRecipeId = null; renderRecipeDetail();
+    });
+  }
+
+  function formatIng(i){
+    const amt = i.amount ? trimNum(i.amount) : '';
+    return escapeHtml(`${amt} ${i.unit||''} ${i.name}`.replace(/\s+/g,' ').trim());
+  }
+  function trimNum(n){
+    return (Math.round(n*100)/100).toString();
+  }
+
+  // ---------- Recipe editor ----------
+  document.getElementById('new-recipe-btn').addEventListener('click', ()=>{
+    viewingRecipeId = null; renderRecipeDetail();
+    openEditor(null);
+  });
+
+  function openEditor(recipe){
+    const slot = document.getElementById('recipe-editor-slot');
+    const isNew = !recipe;
+    const draft = recipe ? JSON.parse(JSON.stringify(recipe)) : {
+      id: uid(), name:'', servings:4, tags:[], ingredients:[{name:'',amount:'',unit:''}], steps:['']
+    };
+
+    function render(){
+      slot.innerHTML = `
+        <div class="panel">
+          <h2>${isNew ? 'New recipe' : 'Edit recipe'}</h2>
+          <div class="field-row">
+            <div class="field grow">
+              <label>Recipe name</label>
+              <input type="text" id="f-name" value="${escapeAttr(draft.name)}" placeholder="e.g. Sunday Roast Chicken">
+            </div>
+            <div class="field">
+              <label>Servings</label>
+              <input type="number" id="f-servings" min="1" value="${draft.servings}" style="width:80px;">
+            </div>
+            <div class="field grow">
+              <label>Tags (comma separated)</label>
+              <input type="text" id="f-tags" value="${escapeAttr(draft.tags.join(', '))}" placeholder="dinner, quick, freezer">
+            </div>
+          </div>
+
+          <div class="field" style="margin-bottom:6px;"><label>Ingredients</label></div>
+          <div id="ing-list"></div>
+          <button class="add-line" id="add-ing">+ add ingredient</button>
+
+          <div class="field" style="margin:16px 0 6px;"><label>Steps</label></div>
+          <div id="step-list"></div>
+          <button class="add-line" id="add-step">+ add step</button>
+
+          <div class="panel-actions">
+            <button class="btn" id="save-recipe-btn">Save recipe</button>
+            <button class="btn secondary" id="cancel-recipe-btn">Cancel</button>
+          </div>
+        </div>
+      `;
+      renderIngRows();
+      renderStepRows();
+
+      document.getElementById('add-ing').addEventListener('click', ()=>{
+        draft.ingredients.push({name:'',amount:'',unit:''});
+        renderIngRows();
+      });
+      document.getElementById('add-step').addEventListener('click', ()=>{
+        draft.steps.push('');
+        renderStepRows();
+      });
+      document.getElementById('save-recipe-btn').addEventListener('click', onSave);
+      document.getElementById('cancel-recipe-btn').addEventListener('click', ()=>{
+        editingRecipeId = null; slot.innerHTML='';
+      });
+    }
+
+    function renderIngRows(){
+      const box = document.getElementById('ing-list');
+      box.innerHTML = '';
+      draft.ingredients.forEach((ing, idx)=>{
+        const row = document.createElement('div');
+        row.className = 'ing-row';
+        row.innerHTML = `
+          <input type="number" step="any" placeholder="amt" value="${ing.amount}">
+          <input type="text" placeholder="unit (cup, lb…)" value="${escapeAttr(ing.unit||'')}">
+          <input type="text" placeholder="ingredient name" value="${escapeAttr(ing.name)}">
+          <button class="remove-x" title="Remove">×</button>
+        `;
+        const [amtIn, unitIn, nameIn] = row.querySelectorAll('input');
+        amtIn.addEventListener('input', e=>{ ing.amount = e.target.value; });
+        unitIn.addEventListener('input', e=>{ ing.unit = e.target.value; });
+        nameIn.addEventListener('input', e=>{ ing.name = e.target.value; });
+        row.querySelector('.remove-x').addEventListener('click', ()=>{
+          draft.ingredients.splice(idx,1);
+          renderIngRows();
+        });
+        box.appendChild(row);
+      });
+    }
+
+    function renderStepRows(){
+      const box = document.getElementById('step-list');
+      box.innerHTML = '';
+      draft.steps.forEach((s, idx)=>{
+        const row = document.createElement('div');
+        row.className = 'step-row';
+        row.innerHTML = `
+          <div class="num">${idx+1}.</div>
+          <textarea placeholder="Describe this step…">${escapeHtml(s)}</textarea>
+          <button class="remove-x" title="Remove">×</button>
+        `;
+        row.querySelector('textarea').addEventListener('input', e=>{ draft.steps[idx] = e.target.value; });
+        row.querySelector('.remove-x').addEventListener('click', ()=>{
+          draft.steps.splice(idx,1);
+          renderStepRows();
+        });
+        box.appendChild(row);
+      });
+    }
+
+    function onSave(){
+      const name = document.getElementById('f-name').value.trim();
+      if(!name){ alert('Give the recipe a name first.'); return; }
+      draft.name = name;
+      draft.servings = Math.max(1, parseInt(document.getElementById('f-servings').value)||1);
+      draft.tags = document.getElementById('f-tags').value.split(',').map(t=>t.trim()).filter(Boolean);
+      draft.ingredients = draft.ingredients
+        .filter(i=>i.name.trim())
+        .map(i=>({name:i.name.trim(), amount: parseFloat(i.amount)||0, unit:(i.unit||'').trim()}));
+      draft.steps = draft.steps.map(s=>s.trim()).filter(Boolean);
+
+      if(isNew){
+        state.recipes.push(draft);
+      } else {
+        const idx = state.recipes.findIndex(r=>r.id===draft.id);
+        state.recipes[idx] = draft;
+      }
+      save();
+      editingRecipeId = null;
+      slot.innerHTML = '';
+      renderRecipeGrid();
+      renderPlanner();
+    }
+
+    render();
+  }
+
+  function escapeAttr(str){
+    return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  }
+
+  // ---------- Planner ----------
+  function renderPlanner(){
+    document.getElementById('week-label').value = state.weekLabel;
+    const list = document.getElementById('day-list');
+    list.innerHTML = '';
+
+    DAYS.forEach(day=>{
+      const recipesForDay = state.recipes.filter(r=>{
+        const sel = state.selections[r.id];
+        return sel && sel.checked && sel.day === day;
+      });
+      const row = document.createElement('div');
+      row.className = 'day-row' + (recipesForDay.length===0 ? ' empty-day' : '');
+      const itemsHtml = recipesForDay.length===0
+        ? 'Nothing planned'
+        : recipesForDay.map(r=>`
+            <div class="day-chip" data-id="${r.id}">
+              ${escapeHtml(r.name)} <button title="Remove from this day">×</button>
+            </div>`).join('');
+      row.innerHTML = `<div class="day-name">${day}</div><div class="day-items">${itemsHtml}</div>`;
+      row.querySelectorAll('.day-chip button').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const rid = btn.closest('.day-chip').dataset.id;
+          const sel = getSelection(rid);
+          sel.checked = false;
+          save();
+          renderPlanner();
+          renderRecipeGrid();
+        });
+      });
+      list.appendChild(row);
+    });
+  }
+
+  document.getElementById('week-label').addEventListener('input', e=>{
+    state.weekLabel = e.target.value;
+    save();
+  });
+  document.getElementById('clear-week-btn').addEventListener('click', ()=>{
+    if(confirm('Clear all recipes selected for this week?')){
+      Object.keys(state.selections).forEach(id=>{ state.selections[id].checked = false; });
+      save(); renderPlanner(); renderRecipeGrid();
+    }
+  });
+
+  // ---------- Shopping list ----------
+  function selectedRecipesInOrder(){
+    return state.recipes
+      .map(r=>({recipe:r, sel: state.selections[r.id]}))
+      .filter(x=>x.sel && x.sel.checked)
+      .sort((a,b)=>{
+        const ai = a.sel.day ? DAYS.indexOf(a.sel.day) : 99;
+        const bi = b.sel.day ? DAYS.indexOf(b.sel.day) : 99;
+        return ai - bi;
+      });
+  }
+
+  function renderShopping(){
+    const box = document.getElementById('shop-recipe-groups');
+    const chosen = selectedRecipesInOrder();
+    if(chosen.length===0){
+      box.innerHTML = '<div class="empty" style="padding:14px 0;">Check off recipes in the Recipes tab to build this list.</div>';
+    } else {
+      box.innerHTML = '';
+      chosen.forEach(({recipe, sel})=>{
+        const group = document.createElement('div');
+        group.className = 'recipe-shop-group';
+        group.innerHTML = `
+          <div class="group-title">
+            <span>${escapeHtml(recipe.name)}</span>
+            <span class="day-tag">${sel.day || 'no day set'}</span>
+          </div>
+          <ul class="shop-list"></ul>
+        `;
+        const ul = group.querySelector('ul');
+        recipe.ingredients.forEach((ing, idx)=>{
+          const key = recipe.id+'::'+idx;
+          const checked = !!state.shoppingChecked[key];
+          const li = document.createElement('li');
+          if(checked) li.classList.add('checked');
+          li.innerHTML = `
+            <input type="checkbox" ${checked?'checked':''}>
+            <span class="item-text">${formatIng(ing)}</span>
+          `;
+          li.querySelector('input').addEventListener('change', e=>{
+            state.shoppingChecked[key] = e.target.checked;
+            save();
+            li.classList.toggle('checked', e.target.checked);
+          });
+          ul.appendChild(li);
+        });
+        box.appendChild(group);
+      });
+    }
+
+    const extraList = document.getElementById('shop-list-extra');
+    if(state.extras.length===0){
+      extraList.innerHTML = '<div class="empty" style="padding:14px 0;">No extras added.</div>';
+    } else {
+      extraList.innerHTML = '';
+      state.extras.forEach(ex=>{
+        const li = document.createElement('li');
+        if(ex.checked) li.classList.add('checked');
+        li.innerHTML = `
+          <input type="checkbox" ${ex.checked?'checked':''}>
+          <span class="item-text">${escapeHtml(ex.text)}</span>
+          <button class="remove-x" title="Remove">×</button>
+        `;
+        li.querySelector('input').addEventListener('change', e=>{
+          ex.checked = e.target.checked;
+          save();
+          li.classList.toggle('checked', e.target.checked);
+        });
+        li.querySelector('.remove-x').addEventListener('click', ()=>{
+          state.extras = state.extras.filter(x=>x.id!==ex.id);
+          save(); renderShopping();
+        });
+        extraList.appendChild(li);
+      });
+    }
+  }
+
+  document.getElementById('add-extra-btn').addEventListener('click', addExtra);
+  document.getElementById('extra-input').addEventListener('keydown', e=>{
+    if(e.key==='Enter') addExtra();
+  });
+  function addExtra(){
+    const input = document.getElementById('extra-input');
+    const text = input.value.trim();
+    if(!text) return;
+    state.extras.push({id:uid(), text, checked:false});
+    input.value='';
+    save(); renderShopping();
+  }
+
+  // ---------- init ----------
+  renderRecipeGrid();
+  renderPlanner();
+  renderShopping();
+})();
+</script>
+</body>
+</html>
