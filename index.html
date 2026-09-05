@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -6,6 +6,10 @@
 <title>Simple Recipe Box — Meal Planner</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@400;500;600;700&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
   :root{
     --paper:#EEF1E4;
@@ -274,6 +278,12 @@
   footer.hint{
     margin-top:40px; text-align:center; font-size:12px; color:var(--ink-soft);
   }
+  .sync-dot{
+    display:inline-block; width:8px; height:8px; border-radius:50%;
+    background:#B4502A; margin-right:6px; vertical-align:middle;
+  }
+  .sync-dot.ok{background:#5C7A4A;}
+  .sync-dot.pending{background:var(--mustard);}
 </style>
 </head>
 <body>
@@ -294,6 +304,8 @@
     <div id="recipe-editor-slot"></div>
     <div class="recipe-toolbar">
       <input type="text" id="recipe-search" placeholder="Search recipes or tags…">
+      <button class="btn secondary" id="scan-recipe-btn">📷 Scan a recipe</button>
+      <input type="file" id="scan-file-input" accept="image/*" capture="environment" style="display:none">
       <button class="btn" id="new-recipe-btn">+ New recipe</button>
     </div>
     <div id="recipe-detail-slot"></div>
@@ -327,13 +339,34 @@
     </div>
   </section>
 
-  <footer class="hint">Saved automatically in this browser.</footer>
+  <footer class="hint"><span class="sync-dot pending" id="sync-dot"></span><span id="sync-text">Connecting to household sync…</span></footer>
 </div>
 
 <script>
 (function(){
-  const STORAGE_KEY = 'larder-data-v2';
   const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyD4uueU3L_QX0rmDKUmM4zVj9Yu3TSEki0",
+    authDomain: "simple-recipe-box.firebaseapp.com",
+    databaseURL: "https://simple-recipe-box-default-rtdb.firebaseio.com",
+    projectId: "simple-recipe-box",
+    storageBucket: "simple-recipe-box.firebasestorage.app",
+    messagingSenderId: "393566171893",
+    appId: "1:393566171893:web:3e5feb19c3a4949bf78bbc"
+  };
+  const fbApp = firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.database();
+  const dataRef = db.ref('recipeBox');
+
+  function setSyncStatus(kind, text){
+    const dot = document.getElementById('sync-dot');
+    const label = document.getElementById('sync-text');
+    if(!dot || !label) return;
+    dot.className = 'sync-dot ' + kind;
+    label.textContent = text;
+  }
 
   function uid(){ return Math.random().toString(36).slice(2,10); }
 
@@ -381,34 +414,70 @@
     };
   }
 
-  function load(){
-    try{
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if(!raw) return defaultData();
-      const parsed = JSON.parse(raw);
-      if(!parsed.recipes) return defaultData();
-      if(!parsed.selections) parsed.selections = {};
-      if(!parsed.shoppingChecked) parsed.shoppingChecked = {};
-      if(!parsed.extras) parsed.extras = [];
-      if(!parsed.weekLabel) parsed.weekLabel = 'This week';
-      return parsed;
-    }catch(e){
-      console.error('Load failed', e);
-      return defaultData();
+  function normalize(parsed){
+    if(!parsed || !parsed.recipes) return defaultData();
+    if(Array.isArray(parsed.recipes)){
+      // already array form, fine
+    } else {
+      // Firebase may return an object map instead of an array; convert back
+      parsed.recipes = Object.values(parsed.recipes);
     }
+    if(!parsed.selections) parsed.selections = {};
+    if(!parsed.shoppingChecked) parsed.shoppingChecked = {};
+    if(!parsed.extras) parsed.extras = [];
+    else if(!Array.isArray(parsed.extras)) parsed.extras = Object.values(parsed.extras);
+    if(!parsed.weekLabel) parsed.weekLabel = 'This week';
+    return parsed;
   }
 
-  function save(){
-    try{
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    }catch(e){
-      console.error('Save failed', e);
-    }
-  }
-
-  let state = load();
+  let state = defaultData();
   let editingRecipeId = null;
   let viewingRecipeId = null;
+  let suppressNextRemoteRender = false;
+
+  // Push the full state to Firebase. Every household member sees this instantly.
+  function save(){
+    setSyncStatus('pending', 'Saving…');
+    dataRef.set(state)
+      .then(()=> setSyncStatus('ok', 'Synced with household'))
+      .catch(err=>{
+        console.error('Save failed', err);
+        setSyncStatus('', 'Save failed — check connection');
+      });
+  }
+
+  function renderAll(){
+    renderRecipeGrid();
+    renderPlanner();
+    renderShopping();
+    renderRecipeDetail();
+  }
+
+  function startSync(){
+    auth.signInAnonymously().catch(err=>{
+      console.error('Anonymous sign-in failed', err);
+      setSyncStatus('', 'Could not connect — check Firebase settings');
+    });
+
+    auth.onAuthStateChanged(user=>{
+      if(!user) return;
+      dataRef.on('value', snapshot=>{
+        const val = snapshot.val();
+        if(val === null){
+          // First person ever to load this: seed the shared database.
+          state = defaultData();
+          dataRef.set(state).then(()=> setSyncStatus('ok', 'Synced with household'));
+        } else {
+          state = normalize(val);
+          setSyncStatus('ok', 'Synced with household');
+        }
+        renderAll();
+      }, err=>{
+        console.error('Sync error', err);
+        setSyncStatus('', 'Sync error — check Firebase rules');
+      });
+    });
+  }
 
   function getSelection(recipeId){
     if(!state.selections[recipeId]) state.selections[recipeId] = {checked:false, day:''};
@@ -542,17 +611,168 @@
     openEditor(null);
   });
 
-  function openEditor(recipe){
+  // ---------- Scan a recipe (on-device OCR, no server/API key needed) ----------
+  document.getElementById('scan-recipe-btn').addEventListener('click', ()=>{
+    document.getElementById('scan-file-input').click();
+  });
+
+  document.getElementById('scan-file-input').addEventListener('change', async (e)=>{
+    const file = e.target.files[0];
+    e.target.value = ''; // allow re-selecting the same file later
+    if(!file) return;
+    viewingRecipeId = null; renderRecipeDetail();
+    showScanProgress('Reading photo…');
+    try{
+      const shrunk = await shrinkImage(file, 1600);
+      const result = await Tesseract.recognize(shrunk, 'eng', {
+        logger: info=>{
+          if(info.status === 'recognizing text'){
+            showScanProgress(`Reading photo… ${Math.round((info.progress||0)*100)}%`);
+          }
+        }
+      });
+      const text = result && result.data && result.data.text ? result.data.text : '';
+      if(!text.trim()){
+        showScanError("Couldn't find any readable text in that photo. Try a clearer, well-lit shot, or type it in manually.");
+        return;
+      }
+      const parsed = parseRecipeText(text);
+      clearScanProgress();
+      openEditor(null, parsed, "We did our best reading the photo — double-check the ingredients, amounts, and steps before saving.");
+    } catch(err){
+      console.error('Scan failed', err);
+      showScanError("Something went wrong reading that photo. You can try again or type the recipe in manually.");
+    }
+  });
+
+  function showScanProgress(msg){
+    const slot = document.getElementById('recipe-editor-slot');
+    slot.innerHTML = `<div class="panel"><h2>Scanning recipe</h2><p style="color:var(--ink-soft);">${escapeHtml(msg)}</p></div>`;
+  }
+  function showScanError(msg){
+    const slot = document.getElementById('recipe-editor-slot');
+    slot.innerHTML = `<div class="panel"><h2>Scan didn't work</h2><p style="color:var(--ink-soft);">${escapeHtml(msg)}</p>
+      <div class="panel-actions"><button class="btn secondary" id="scan-dismiss-btn">Dismiss</button></div></div>`;
+    document.getElementById('scan-dismiss-btn').addEventListener('click', ()=>{ slot.innerHTML=''; });
+  }
+  function clearScanProgress(){
+    document.getElementById('recipe-editor-slot').innerHTML = '';
+  }
+
+  // Downscale large photos client-side for faster, more reliable OCR.
+  function shrinkImage(file, maxDim){
+    return new Promise((resolve, reject)=>{
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = ()=>{
+        let {width, height} = img;
+        if(width > maxDim || height > maxDim){
+          const scale = maxDim / Math.max(width, height);
+          width = Math.round(width*scale);
+          height = Math.round(height*scale);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        canvas.toBlob(blob=>{
+          URL.revokeObjectURL(url);
+          resolve(blob || file);
+        }, 'image/png');
+      };
+      img.onerror = ()=>{ URL.revokeObjectURL(url); reject(new Error('Could not load image')); };
+      img.src = url;
+    });
+  }
+
+  const UNIT_WORDS = ['cup','cups','tbsp','tablespoon','tablespoons','tsp','teaspoon','teaspoons',
+    'oz','ounce','ounces','lb','lbs','pound','pounds','g','gram','grams','kg','kilogram','kilograms',
+    'ml','milliliter','milliliters','l','liter','liters','litre','litres','pinch','pinches','clove','cloves',
+    'slice','slices','can','cans','stick','sticks','head','heads','bunch','bunches'];
+
+  function parseFraction(token){
+    token = token.trim();
+    if(!token) return 0;
+    // "1 1/2" style
+    const mixed = token.match(/^(\d+)\s+(\d+)\/(\d+)$/);
+    if(mixed) return parseInt(mixed[1]) + (parseInt(mixed[2])/parseInt(mixed[3]));
+    const frac = token.match(/^(\d+)\/(\d+)$/);
+    if(frac) return parseInt(frac[1])/parseInt(frac[2]);
+    const num = parseFloat(token);
+    return isNaN(num) ? 0 : num;
+  }
+
+  function parseIngredientLine(line){
+    line = line.replace(/^[\-\*•\u2022]\s*/, '').trim();
+    // leading amount: digits/fraction/mixed number
+    const m = line.match(/^([\d]+(?:\/\d+)?(?:\s+\d+\/\d+)?|\d*\.\d+)\s+(.*)$/);
+    if(!m) return {amount:'', unit:'', name: line};
+    const amount = parseFraction(m[1]);
+    const rest = m[2].trim();
+    const restWords = rest.split(/\s+/);
+    const firstWord = (restWords[0]||'').toLowerCase().replace(/[.,]$/,'');
+    if(UNIT_WORDS.includes(firstWord)){
+      return {amount, unit: restWords[0].replace(/[.,]$/,''), name: restWords.slice(1).join(' ')};
+    }
+    return {amount, unit:'', name: rest};
+  }
+
+  function parseRecipeText(text){
+    const rawLines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+    let name = rawLines.length ? rawLines[0].replace(/[:.]+$/,'') : '';
+    if(name.length > 70) name = name.slice(0,70);
+
+    let servings = 4;
+    for(const line of rawLines){
+      const sm = line.match(/(?:serves|servings|yield[s]?)\s*[:\-]?\s*(\d+)/i);
+      if(sm){ servings = parseInt(sm[1]); break; }
+    }
+
+    const ingIdx = rawLines.findIndex(l=>/^ingredients?\b/i.test(l));
+    const stepIdx = rawLines.findIndex((l,i)=> (ingIdx<0 || i>ingIdx) && /^(instructions|directions|method|steps|preparation)\b/i.test(l));
+
+    let ingredientLines = [];
+    let stepLines = [];
+    let note = '';
+
+    if(ingIdx >= 0){
+      const end = stepIdx >= 0 ? stepIdx : rawLines.length;
+      ingredientLines = rawLines.slice(ingIdx+1, end);
+      if(stepIdx >= 0) stepLines = rawLines.slice(stepIdx+1);
+    } else {
+      // No clear headers found — everything goes into steps for manual sorting.
+      stepLines = rawLines.slice(1);
+    }
+
+    const ingredients = ingredientLines.length
+      ? ingredientLines.map(parseIngredientLine)
+      : [{name:'', amount:'', unit:''}];
+
+    const steps = (stepLines.length ? stepLines : [''])
+      .map(s=> s.replace(/^\s*\d+[\.\)]\s*/, '').replace(/^[\-\*•\u2022]\s*/, ''))
+      .filter(Boolean);
+
+    return {
+      name: name || '',
+      servings: servings || 4,
+      tags: [],
+      ingredients: ingredients.length ? ingredients : [{name:'', amount:'', unit:''}],
+      steps: steps.length ? steps : ['']
+    };
+  }
+
+  function openEditor(recipe, prefill, noteText){
     const slot = document.getElementById('recipe-editor-slot');
     const isNew = !recipe;
-    const draft = recipe ? JSON.parse(JSON.stringify(recipe)) : {
-      id: uid(), name:'', servings:4, tags:[], ingredients:[{name:'',amount:'',unit:''}], steps:['']
-    };
+    const draft = recipe ? JSON.parse(JSON.stringify(recipe)) : Object.assign(
+      {id: uid(), name:'', servings:4, tags:[], ingredients:[{name:'',amount:'',unit:''}], steps:['']},
+      prefill || {}
+    );
 
     function render(){
       slot.innerHTML = `
         <div class="panel">
           <h2>${isNew ? 'New recipe' : 'Edit recipe'}</h2>
+          ${noteText ? `<div style="background:#FBF1D9;border:1px solid var(--mustard);padding:8px 12px;border-radius:4px;font-size:13px;color:var(--sage-dark);margin-bottom:14px;">${escapeHtml(noteText)}</div>` : ''}
           <div class="field-row">
             <div class="field grow">
               <label>Recipe name</label>
@@ -676,7 +896,10 @@
 
   // ---------- Planner ----------
   function renderPlanner(){
-    document.getElementById('week-label').value = state.weekLabel;
+    const weekLabelEl = document.getElementById('week-label');
+    if(document.activeElement !== weekLabelEl){
+      weekLabelEl.value = state.weekLabel;
+    }
     const list = document.getElementById('day-list');
     list.innerHTML = '';
 
@@ -708,9 +931,11 @@
     });
   }
 
+  let weekLabelTimer = null;
   document.getElementById('week-label').addEventListener('input', e=>{
     state.weekLabel = e.target.value;
-    save();
+    clearTimeout(weekLabelTimer);
+    weekLabelTimer = setTimeout(save, 500);
   });
   document.getElementById('clear-week-btn').addEventListener('click', ()=>{
     if(confirm('Clear all recipes selected for this week?')){
@@ -810,9 +1035,7 @@
   }
 
   // ---------- init ----------
-  renderRecipeGrid();
-  renderPlanner();
-  renderShopping();
+  startSync();
 })();
 </script>
 </body>
