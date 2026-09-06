@@ -9,7 +9,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-functions-compat.js"></script>
 <style>
   :root{
     --paper:#EEF1E4;
@@ -611,7 +611,7 @@
     openEditor(null);
   });
 
-  // ---------- Scan a recipe (on-device OCR, no server/API key needed) ----------
+  // ---------- Scan a recipe (Claude vision, via Cloud Function) ----------
   document.getElementById('scan-recipe-btn').addEventListener('click', ()=>{
     document.getElementById('scan-file-input').click();
   });
@@ -623,57 +623,23 @@
     viewingRecipeId = null; renderRecipeDetail();
     showScanProgress('Reading photo…');
     try{
-      const processed = await preprocessImage(file, 2600);
-      const result = await Tesseract.recognize(processed, 'eng', {
-        tessedit_pageseg_mode: '6', // treat photo as one uniform block of text — usually more accurate for a single recipe card/page than full auto layout detection
-        preserve_interword_spaces: '1',
-        logger: info=>{
-          if(info.status === 'recognizing text'){
-            showScanProgress(`Reading photo… ${Math.round((info.progress||0)*100)}%`);
-          }
-        }
-      });
-      const text = result && result.data && result.data.text ? result.data.text : '';
-      if(!text.trim()){
-        showScanError("Couldn't find any readable text in that photo. Try a clearer, well-lit shot, cropped tight to just the recipe, or type it in manually.");
+      const {base64, mimeType} = await prepareImageForUpload(file, 1568, 0.85);
+      const scanRecipeFn = firebase.app().functions().httpsCallable('scanRecipe');
+      const response = await scanRecipeFn({imageBase64: base64, mimeType});
+      const parsed = response.data;
+      if(!parsed || !parsed.name){
+        showScanError("Couldn't make sense of that photo. Try a clearer shot, or type the recipe in manually.");
         return;
       }
-      showScanReview(text);
+      parsed.tags = parsed.tags || [];
+      clearScanProgress();
+      openEditor(null, parsed, "Read from your photo — double-check ingredients, amounts, and steps before saving.");
     } catch(err){
       console.error('Scan failed', err);
-      showScanError("Something went wrong reading that photo. You can try again or type the recipe in manually.");
+      const msg = (err && err.message) ? err.message : 'Something went wrong reading that photo.';
+      showScanError(msg + " You can try again or type the recipe in manually.");
     }
   });
-
-  function showScanReview(text){
-    const slot = document.getElementById('recipe-editor-slot');
-    slot.innerHTML = `
-      <div class="panel">
-        <h2>Review scanned text</h2>
-        <p style="color:var(--ink-soft); font-size:13px; margin-bottom:10px;">
-          OCR isn't perfect — fix any garbled words below before we sort it into ingredients and steps.
-          Tip: a straight-on photo, good lighting, and cropping tight to just the recipe reads much better than an angled or dim shot.
-        </p>
-        <textarea id="scan-review-text" style="width:100%; min-height:240px;">${escapeHtml(text)}</textarea>
-        <div class="panel-actions">
-          <button class="btn" id="scan-parse-btn">Looks good — fill in recipe</button>
-          <button class="btn secondary" id="scan-retry-btn">Try a different photo</button>
-          <button class="btn secondary" id="scan-cancel-btn">Cancel</button>
-        </div>
-      </div>
-    `;
-    document.getElementById('scan-parse-btn').addEventListener('click', ()=>{
-      const edited = document.getElementById('scan-review-text').value;
-      const parsed = parseRecipeText(edited);
-      clearScanProgress();
-      openEditor(null, parsed, "Fields were guessed from your scanned text — double-check ingredients, amounts, and steps before saving.");
-    });
-    document.getElementById('scan-retry-btn').addEventListener('click', ()=>{
-      clearScanProgress();
-      document.getElementById('scan-file-input').click();
-    });
-    document.getElementById('scan-cancel-btn').addEventListener('click', clearScanProgress);
-  }
 
   function showScanProgress(msg){
     const slot = document.getElementById('recipe-editor-slot');
@@ -689,10 +655,9 @@
     document.getElementById('recipe-editor-slot').innerHTML = '';
   }
 
-  // Downscale + grayscale + binarize (Otsu threshold) large photos client-side.
-  // Clean black/white text on a plain background is what OCR engines read best —
-  // this does a much better job on real phone photos than raw color/grayscale.
-  function preprocessImage(file, maxDim){
+  // Resize/compress the photo client-side before sending it to the Cloud Function —
+  // keeps things fast and cheap without hurting Claude's ability to read the image.
+  function prepareImageForUpload(file, maxDim, quality){
     return new Promise((resolve, reject)=>{
       const img = new Image();
       const url = URL.createObjectURL(file);
@@ -705,136 +670,14 @@
         }
         const canvas = document.createElement('canvas');
         canvas.width = width; canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-
-        const imageData = ctx.getImageData(0, 0, width, height);
-        const d = imageData.data;
-        const pixelCount = width*height;
-        const gray = new Uint8ClampedArray(pixelCount);
-        let min = 255, max = 0;
-
-        for(let i=0, p=0; i<d.length; i+=4, p++){
-          const g = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
-          gray[p] = g;
-          if(g < min) min = g;
-          if(g > max) max = g;
-        }
-
-        // Contrast-stretch first so the histogram fills the full 0-255 range
-        const range = Math.max(max - min, 1);
-        for(let p=0; p<pixelCount; p++){
-          gray[p] = ((gray[p]-min)/range) * 255;
-        }
-
-        // Otsu's method: find the threshold that best splits foreground/background
-        const hist = new Array(256).fill(0);
-        for(let p=0; p<pixelCount; p++) hist[gray[p]]++;
-        let sum = 0;
-        for(let t=0; t<256; t++) sum += t*hist[t];
-        let sumB=0, wB=0, varMax=0, threshold=128;
-        for(let t=0; t<256; t++){
-          wB += hist[t];
-          if(wB===0) continue;
-          const wF = pixelCount - wB;
-          if(wF===0) break;
-          sumB += t*hist[t];
-          const mB = sumB/wB;
-          const mF = (sum-sumB)/wF;
-          const varBetween = wB*wF*(mB-mF)*(mB-mF);
-          if(varBetween > varMax){ varMax = varBetween; threshold = t; }
-        }
-
-        for(let i=0, p=0; i<d.length; i+=4, p++){
-          const v = gray[p] > threshold ? 255 : 0;
-          d[i] = d[i+1] = d[i+2] = v;
-        }
-        ctx.putImageData(imageData, 0, 0);
-
-        canvas.toBlob(blob=>{
-          URL.revokeObjectURL(url);
-          resolve(blob || file);
-        }, 'image/png');
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        URL.revokeObjectURL(url);
+        resolve({base64: dataUrl.split(',')[1], mimeType: 'image/jpeg'});
       };
-      img.onerror = ()=>{ URL.revokeObjectURL(url); reject(new Error('Could not load image')); };
+      img.onerror = ()=>{ URL.revokeObjectURL(url); reject(new Error('Could not load that image.')); };
       img.src = url;
     });
-  }
-
-  const UNIT_WORDS = ['cup','cups','tbsp','tablespoon','tablespoons','tsp','teaspoon','teaspoons',
-    'oz','ounce','ounces','lb','lbs','pound','pounds','g','gram','grams','kg','kilogram','kilograms',
-    'ml','milliliter','milliliters','l','liter','liters','litre','litres','pinch','pinches','clove','cloves',
-    'slice','slices','can','cans','stick','sticks','head','heads','bunch','bunches'];
-
-  function parseFraction(token){
-    token = token.trim();
-    if(!token) return 0;
-    // "1 1/2" style
-    const mixed = token.match(/^(\d+)\s+(\d+)\/(\d+)$/);
-    if(mixed) return parseInt(mixed[1]) + (parseInt(mixed[2])/parseInt(mixed[3]));
-    const frac = token.match(/^(\d+)\/(\d+)$/);
-    if(frac) return parseInt(frac[1])/parseInt(frac[2]);
-    const num = parseFloat(token);
-    return isNaN(num) ? 0 : num;
-  }
-
-  function parseIngredientLine(line){
-    line = line.replace(/^[\-\*•\u2022]\s*/, '').trim();
-    // leading amount: digits/fraction/mixed number
-    const m = line.match(/^([\d]+(?:\/\d+)?(?:\s+\d+\/\d+)?|\d*\.\d+)\s+(.*)$/);
-    if(!m) return {amount:'', unit:'', name: line};
-    const amount = parseFraction(m[1]);
-    const rest = m[2].trim();
-    const restWords = rest.split(/\s+/);
-    const firstWord = (restWords[0]||'').toLowerCase().replace(/[.,]$/,'');
-    if(UNIT_WORDS.includes(firstWord)){
-      return {amount, unit: restWords[0].replace(/[.,]$/,''), name: restWords.slice(1).join(' ')};
-    }
-    return {amount, unit:'', name: rest};
-  }
-
-  function parseRecipeText(text){
-    const rawLines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-    let name = rawLines.length ? rawLines[0].replace(/[:.]+$/,'') : '';
-    if(name.length > 70) name = name.slice(0,70);
-
-    let servings = 4;
-    for(const line of rawLines){
-      const sm = line.match(/(?:serves|servings|yield[s]?)\s*[:\-]?\s*(\d+)/i);
-      if(sm){ servings = parseInt(sm[1]); break; }
-    }
-
-    const ingIdx = rawLines.findIndex(l=>/^ingredients?\b/i.test(l));
-    const stepIdx = rawLines.findIndex((l,i)=> (ingIdx<0 || i>ingIdx) && /^(instructions|directions|method|steps|preparation)\b/i.test(l));
-
-    let ingredientLines = [];
-    let stepLines = [];
-    let note = '';
-
-    if(ingIdx >= 0){
-      const end = stepIdx >= 0 ? stepIdx : rawLines.length;
-      ingredientLines = rawLines.slice(ingIdx+1, end);
-      if(stepIdx >= 0) stepLines = rawLines.slice(stepIdx+1);
-    } else {
-      // No clear headers found — everything goes into steps for manual sorting.
-      stepLines = rawLines.slice(1);
-    }
-
-    const ingredients = ingredientLines.length
-      ? ingredientLines.map(parseIngredientLine)
-      : [{name:'', amount:'', unit:''}];
-
-    const steps = (stepLines.length ? stepLines : [''])
-      .map(s=> s.replace(/^\s*\d+[\.\)]\s*/, '').replace(/^[\-\*•\u2022]\s*/, ''))
-      .filter(Boolean);
-
-    return {
-      name: name || '',
-      servings: servings || 4,
-      tags: [],
-      ingredients: ingredients.length ? ingredients : [{name:'', amount:'', unit:''}],
-      steps: steps.length ? steps : ['']
-    };
   }
 
   function openEditor(recipe, prefill, noteText){
