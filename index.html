@@ -449,15 +449,48 @@
   let viewingRecipeId = null;
   let suppressNextRemoteRender = false;
 
-  // Push the full state to Firebase. Every household member sees this instantly.
-  function save(){
-    setSyncStatus('pending', 'Saving…');
-    dataRef.set(state)
-      .then(()=> setSyncStatus('ok', 'Synced with household'))
-      .catch(err=>{
-        console.error('Save failed', err);
-        setSyncStatus('', 'Save failed — check connection');
-      });
+  // Targeted writes: each change saves only its own piece of data, so two
+  // people using the app at the same time can never overwrite each other's changes.
+  function markSaving(){ setSyncStatus('pending', 'Saving…'); }
+  function markSynced(){ setSyncStatus('ok', 'Synced with household'); }
+  function onSaveError(err){
+    console.error('Save failed', err);
+    setSyncStatus('', 'Save failed — check connection');
+  }
+
+  function saveRecipe(recipe){
+    markSaving();
+    dataRef.child('recipes').child(recipe.id).set(recipe).then(markSynced).catch(onSaveError);
+  }
+  function deleteRecipeRemote(id){
+    markSaving();
+    dataRef.update({['recipes/'+id]: null, ['selections/'+id]: null}).then(markSynced).catch(onSaveError);
+  }
+  function saveSelection(id, sel){
+    markSaving();
+    dataRef.child('selections').child(id).set(sel).then(markSynced).catch(onSaveError);
+  }
+  function clearAllSelections(ids){
+    markSaving();
+    const updates = {};
+    ids.forEach(id=>{ updates['selections/'+id+'/checked'] = false; });
+    dataRef.update(updates).then(markSynced).catch(onSaveError);
+  }
+  function saveWeekLabel(text){
+    markSaving();
+    dataRef.child('weekLabel').set(text).then(markSynced).catch(onSaveError);
+  }
+  function saveShoppingChecked(key, val){
+    markSaving();
+    dataRef.child('shoppingChecked').child(key).set(val).then(markSynced).catch(onSaveError);
+  }
+  function saveExtra(extra){
+    markSaving();
+    dataRef.child('extras').child(extra.id).set(extra).then(markSynced).catch(onSaveError);
+  }
+  function deleteExtraRemote(id){
+    markSaving();
+    dataRef.child('extras').child(id).remove().then(markSynced).catch(onSaveError);
   }
 
   function renderAll(){
@@ -554,11 +587,11 @@
         if(!sel.checked) sel.day = sel.day; // keep last day choice remembered
         dayEl.disabled = !sel.checked;
         dayEl.value = sel.day;
-        save();
+        saveSelection(r.id, sel);
       });
       dayEl.addEventListener('change', ()=>{
         sel.day = dayEl.value;
-        save();
+        saveSelection(r.id, sel);
       });
       grid.appendChild(card);
     });
@@ -603,7 +636,7 @@
         state.recipes = state.recipes.filter(x=>x.id!==r.id);
         delete state.selections[r.id];
         viewingRecipeId = null;
-        save(); renderRecipeGrid(); renderRecipeDetail();
+        deleteRecipeRemote(r.id); renderRecipeGrid(); renderRecipeDetail();
       }
     });
     document.getElementById('close-detail-btn').addEventListener('click', ()=>{
@@ -815,7 +848,7 @@
         const idx = state.recipes.findIndex(r=>r.id===draft.id);
         state.recipes[idx] = draft;
       }
-      save();
+      saveRecipe(draft);
       editingRecipeId = null;
       slot.innerHTML = '';
       renderRecipeGrid();
@@ -857,7 +890,7 @@
           const rid = btn.closest('.day-chip').dataset.id;
           const sel = getSelection(rid);
           sel.checked = false;
-          save();
+          saveSelection(rid, sel);
           renderPlanner();
           renderRecipeGrid();
         });
@@ -870,12 +903,13 @@
   document.getElementById('week-label').addEventListener('input', e=>{
     state.weekLabel = e.target.value;
     clearTimeout(weekLabelTimer);
-    weekLabelTimer = setTimeout(save, 500);
+    weekLabelTimer = setTimeout(()=> saveWeekLabel(state.weekLabel), 500);
   });
   document.getElementById('clear-week-btn').addEventListener('click', ()=>{
     if(confirm('Clear all recipes selected for this week?')){
-      Object.keys(state.selections).forEach(id=>{ state.selections[id].checked = false; });
-      save(); renderPlanner(); renderRecipeGrid();
+      const ids = Object.keys(state.selections);
+      ids.forEach(id=>{ state.selections[id].checked = false; });
+      clearAllSelections(ids); renderPlanner(); renderRecipeGrid();
     }
   });
 
@@ -920,7 +954,7 @@
           `;
           li.querySelector('input').addEventListener('change', e=>{
             state.shoppingChecked[key] = e.target.checked;
-            save();
+            saveShoppingChecked(key, e.target.checked);
             li.classList.toggle('checked', e.target.checked);
           });
           ul.appendChild(li);
@@ -944,12 +978,12 @@
         `;
         li.querySelector('input').addEventListener('change', e=>{
           ex.checked = e.target.checked;
-          save();
+          saveExtra(ex);
           li.classList.toggle('checked', e.target.checked);
         });
         li.querySelector('.remove-x').addEventListener('click', ()=>{
           state.extras = state.extras.filter(x=>x.id!==ex.id);
-          save(); renderShopping();
+          deleteExtraRemote(ex.id); renderShopping();
         });
         extraList.appendChild(li);
       });
@@ -964,9 +998,10 @@
     const input = document.getElementById('extra-input');
     const text = input.value.trim();
     if(!text) return;
-    state.extras.push({id:uid(), text, checked:false});
+    const extra = {id:uid(), text, checked:false};
+    state.extras.push(extra);
     input.value='';
-    save(); renderShopping();
+    saveExtra(extra); renderShopping();
   }
 
   // ---------- init ----------
