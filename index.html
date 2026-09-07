@@ -428,14 +428,34 @@
     };
   }
 
+  // Repairs a single recipe object so every field the app relies on is always
+  // present and the right type, even if a bad/partial save got into the database.
+  function repairRecipe(r){
+    if(!r || typeof r !== 'object') r = {};
+    return {
+      id: r.id || uid(),
+      name: (typeof r.name === 'string' && r.name.trim()) ? r.name : 'Untitled recipe',
+      servings: (typeof r.servings === 'number' && r.servings > 0) ? r.servings : 4,
+      tags: Array.isArray(r.tags) ? r.tags.filter(t=>typeof t === 'string') : [],
+      ingredients: Array.isArray(r.ingredients)
+        ? r.ingredients.map(i=>({
+            name: (i && typeof i.name === 'string') ? i.name : '',
+            amount: (i && i.amount !== undefined && i.amount !== null) ? String(i.amount) : '',
+            unit: (i && typeof i.unit === 'string') ? i.unit : ''
+          }))
+        : [],
+      steps: Array.isArray(r.steps) ? r.steps.filter(s=>typeof s === 'string') : []
+    };
+  }
+
   function normalize(parsed){
     if(!parsed || !parsed.recipes) return defaultData();
-    if(Array.isArray(parsed.recipes)){
-      // already array form, fine
-    } else {
+    if(!Array.isArray(parsed.recipes)){
       // Firebase may return an object map instead of an array; convert back
       parsed.recipes = Object.values(parsed.recipes);
     }
+    // Repair every recipe so a single malformed entry can never break rendering for the rest.
+    parsed.recipes = parsed.recipes.filter(Boolean).map(repairRecipe);
     if(!parsed.selections) parsed.selections = {};
     if(!parsed.shoppingChecked) parsed.shoppingChecked = {};
     if(!parsed.extras) parsed.extras = [];
