@@ -194,6 +194,20 @@
   .field.grow{flex:1; min-width:180px;}
   textarea{resize:vertical; font-family:inherit;}
   .ing-row{display:grid; grid-template-columns:80px 90px 1fr 32px; gap:8px; margin-bottom:6px; align-items:center;}
+  @media (max-width: 480px){
+    .ing-row{
+      grid-template-columns: 1fr 1fr 32px;
+      grid-template-areas: "amt unit remove" "name name name";
+      row-gap:4px;
+      margin-bottom:12px;
+      padding-bottom:10px;
+      border-bottom:1px dashed var(--line);
+    }
+    .ing-row input:nth-child(1){grid-area:amt;}
+    .ing-row input:nth-child(2){grid-area:unit;}
+    .ing-row input:nth-child(3){grid-area:name; width:100%;}
+    .ing-row .remove-x{grid-area:remove;}
+  }
   .ing-row input{width:100%;}
   .step-row{display:flex; gap:8px; margin-bottom:6px; align-items:flex-start;}
   .step-row .num{
@@ -623,7 +637,7 @@
     viewingRecipeId = null; renderRecipeDetail();
     showScanProgress('Reading photo…');
     try{
-      const {base64, mimeType} = await prepareImageForUpload(file, 1568, 0.85);
+      const {base64, mimeType} = await prepareImageForUpload(file, 2000, 0.92);
       const scanRecipeFn = firebase.app().functions().httpsCallable('scanRecipe');
       const response = await scanRecipeFn({imageBase64: base64, mimeType});
       const parsed = response.data;
@@ -693,6 +707,10 @@
         <div class="panel">
           <h2>${isNew ? 'New recipe' : 'Edit recipe'}</h2>
           ${noteText ? `<div style="background:#FBF1D9;border:1px solid var(--mustard);padding:8px 12px;border-radius:4px;font-size:13px;color:var(--sage-dark);margin-bottom:14px;">${escapeHtml(noteText)}</div>` : ''}
+          ${prefill ? `<details style="margin-bottom:14px; font-size:12px; color:var(--ink-soft);">
+            <summary style="cursor:pointer;">Show raw scanned data (for troubleshooting)</summary>
+            <pre style="white-space:pre-wrap; word-break:break-word; background:#F5F3E8; padding:8px; border-radius:4px; margin-top:6px;">${escapeHtml(JSON.stringify(prefill, null, 2))}</pre>
+          </details>` : ''}
           <div class="field-row">
             <div class="field grow">
               <label>Recipe name</label>
