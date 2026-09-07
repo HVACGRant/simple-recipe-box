@@ -430,10 +430,12 @@
 
   // Repairs a single recipe object so every field the app relies on is always
   // present and the right type, even if a bad/partial save got into the database.
-  function repairRecipe(r){
+  // `key` is the recipe's actual location in the database — it always wins over
+  // whatever (if anything) is in the "id" field, so edits/deletes never target the wrong entry.
+  function repairRecipe(r, key){
     if(!r || typeof r !== 'object') r = {};
     return {
-      id: r.id || uid(),
+      id: key || r.id || uid(),
       name: (typeof r.name === 'string' && r.name.trim()) ? r.name : 'Untitled recipe',
       servings: (typeof r.servings === 'number' && r.servings > 0) ? r.servings : 4,
       tags: Array.isArray(r.tags) ? r.tags.filter(t=>typeof t === 'string') : [],
@@ -450,12 +452,15 @@
 
   function normalize(parsed){
     if(!parsed || !parsed.recipes) return defaultData();
-    if(!Array.isArray(parsed.recipes)){
-      // Firebase may return an object map instead of an array; convert back
-      parsed.recipes = Object.values(parsed.recipes);
+    // Build [key, value] pairs so we always know each recipe's real database location,
+    // whether it's stored as an array (legacy) or an object map (current).
+    let entries;
+    if(Array.isArray(parsed.recipes)){
+      entries = parsed.recipes.map((v,i)=>[String(i), v]);
+    } else {
+      entries = Object.entries(parsed.recipes);
     }
-    // Repair every recipe so a single malformed entry can never break rendering for the rest.
-    parsed.recipes = parsed.recipes.filter(Boolean).map(repairRecipe);
+    parsed.recipes = entries.filter(([k,v])=>v).map(([k,v])=>repairRecipe(v,k));
     if(!parsed.selections) parsed.selections = {};
     if(!parsed.shoppingChecked) parsed.shoppingChecked = {};
     if(!parsed.extras) parsed.extras = [];
