@@ -193,10 +193,10 @@
   .field label{font-size:12.5px; color:var(--ink-soft); font-weight:600;}
   .field.grow{flex:1; min-width:180px;}
   textarea{resize:vertical; font-family:inherit;}
-  .ing-row{display:grid; grid-template-columns:80px 90px 1fr 32px; gap:8px; margin-bottom:6px; align-items:center;}
+  .ing-row{display:grid; grid-template-columns:110px 100px 1fr 32px; gap:8px; margin-bottom:6px; align-items:center;}
   @media (max-width: 480px){
     .ing-row{
-      grid-template-columns: 1fr 1fr 32px;
+      grid-template-columns: 1.3fr 1fr 32px;
       grid-template-areas: "amt unit remove" "name name name";
       row-gap:4px;
       margin-bottom:12px;
@@ -612,11 +612,8 @@
   }
 
   function formatIng(i){
-    const amt = i.amount ? trimNum(i.amount) : '';
+    const amt = (i.amount !== undefined && i.amount !== null) ? String(i.amount).trim() : '';
     return escapeHtml(`${amt} ${i.unit||''} ${i.name}`.replace(/\s+/g,' ').trim());
-  }
-  function trimNum(n){
-    return (Math.round(n*100)/100).toString();
   }
 
   // ---------- Recipe editor ----------
@@ -764,8 +761,8 @@
         const row = document.createElement('div');
         row.className = 'ing-row';
         row.innerHTML = `
-          <input type="number" step="any" placeholder="amt" value="${ing.amount}">
-          <input type="text" placeholder="unit (cup, lb…)" value="${escapeAttr(ing.unit||'')}">
+          <input type="text" inputmode="text" placeholder="amt (e.g. 1/2)" value="${escapeAttr(String(ing.amount!=null?ing.amount:''))}">
+          <input type="text" placeholder="unit (tsp, tbsp, c…)" value="${escapeAttr(ing.unit||'')}">
           <input type="text" placeholder="ingredient name" value="${escapeAttr(ing.name)}">
           <button class="remove-x" title="Remove">×</button>
         `;
@@ -809,7 +806,7 @@
       draft.tags = document.getElementById('f-tags').value.split(',').map(t=>t.trim()).filter(Boolean);
       draft.ingredients = draft.ingredients
         .filter(i=>i.name.trim())
-        .map(i=>({name:i.name.trim(), amount: parseFloat(i.amount)||0, unit:(i.unit||'').trim()}));
+        .map(i=>({name:i.name.trim(), amount: (i.amount||'').toString().trim(), unit:(i.unit||'').trim()}));
       draft.steps = draft.steps.map(s=>s.trim()).filter(Boolean);
 
       if(isNew){
