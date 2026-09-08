@@ -577,6 +577,11 @@
   // ---------- Recipes: list ----------
   function renderRecipeGrid(){
     const grid = document.getElementById('recipe-grid');
+    // Skip rebuilding while someone is actively typing in a card (e.g. the "who's cooking"
+    // box) — a full rebuild would recreate the input and kick away focus/keyboard mid-type.
+    if(document.activeElement && grid.contains(document.activeElement)){
+      return;
+    }
     const q = document.getElementById('recipe-search').value.trim().toLowerCase();
     const filtered = state.recipes.filter(r=>{
       if(!q) return true;
@@ -632,7 +637,11 @@
       cookEl.addEventListener('input', ()=>{
         sel.cook = cookEl.value;
         clearTimeout(cookTimer);
-        cookTimer = setTimeout(()=> saveSelection(r.id, sel), 500);
+        cookTimer = setTimeout(()=> saveSelection(r.id, sel), 800);
+      });
+      cookEl.addEventListener('blur', ()=>{
+        clearTimeout(cookTimer);
+        saveSelection(r.id, sel);
       });
       grid.appendChild(card);
     });
