@@ -164,6 +164,7 @@
   .plan-controls{
     display:flex;
     align-items:center;
+    flex-wrap:wrap;
     gap:8px;
     margin-top:12px;
     padding-top:10px;
@@ -173,12 +174,13 @@
   .plan-controls label{
     display:flex; align-items:center; gap:6px;
     color:var(--ink-soft); cursor:pointer;
+    flex-basis:100%;
   }
   .plan-controls input[type=checkbox]{width:15px; height:15px; accent-color:var(--sage-dark); cursor:pointer;}
-  .plan-controls select{
-    padding:5px 7px; font-size:13px; flex:1;
+  .plan-controls select, .plan-controls input[type=text]{
+    padding:5px 7px; font-size:13px; flex:1; min-width:0;
   }
-  .plan-controls select:disabled{opacity:0.5; cursor:not-allowed;}
+  .plan-controls select:disabled, .plan-controls input[type=text]:disabled{opacity:0.5; cursor:not-allowed;}
 
   /* ---------- Recipe editor (modal-ish inline panel) ---------- */
   .panel{
@@ -259,6 +261,9 @@
   }
   .day-chip button{
     background:none; border:none; color:var(--rust); cursor:pointer; font-size:14px; line-height:1; padding:0;
+  }
+  .day-chip .cook-tag{
+    color:var(--ink-soft); font-weight:600; font-size:12px;
   }
   .day-row.empty-day .day-items{color:var(--ink-soft); font-style:italic; font-size:13px; padding-top:5px;}
 
@@ -552,7 +557,8 @@
   }
 
   function getSelection(recipeId){
-    if(!state.selections[recipeId]) state.selections[recipeId] = {checked:false, day:''};
+    if(!state.selections[recipeId]) state.selections[recipeId] = {checked:false, day:'', cook:''};
+    if(state.selections[recipeId].cook === undefined) state.selections[recipeId].cook = '';
     return state.selections[recipeId];
   }
 
@@ -597,6 +603,7 @@
             <option value="">Choose day…</option>
             ${DAYS.map(d=>`<option value="${d}" ${sel.day===d?'selected':''}>${d}</option>`).join('')}
           </select>
+          <input type="text" class="sel-cook" placeholder="Who's cooking?" value="${escapeAttr(sel.cook||'')}" ${sel.checked?'':'disabled'}>
         </div>
       `;
       card.querySelector('.card-main').addEventListener('click', ()=>{
@@ -604,19 +611,28 @@
       });
       const checkEl = card.querySelector('.sel-check');
       const dayEl = card.querySelector('.sel-day');
+      const cookEl = card.querySelector('.sel-cook');
       checkEl.addEventListener('click', e=> e.stopPropagation());
       dayEl.addEventListener('click', e=> e.stopPropagation());
+      cookEl.addEventListener('click', e=> e.stopPropagation());
       checkEl.addEventListener('change', ()=>{
         sel.checked = checkEl.checked;
         if(sel.checked && !sel.day) sel.day = 'Monday';
         if(!sel.checked) sel.day = sel.day; // keep last day choice remembered
         dayEl.disabled = !sel.checked;
+        cookEl.disabled = !sel.checked;
         dayEl.value = sel.day;
         saveSelection(r.id, sel);
       });
       dayEl.addEventListener('change', ()=>{
         sel.day = dayEl.value;
         saveSelection(r.id, sel);
+      });
+      let cookTimer = null;
+      cookEl.addEventListener('input', ()=>{
+        sel.cook = cookEl.value;
+        clearTimeout(cookTimer);
+        cookTimer = setTimeout(()=> saveSelection(r.id, sel), 500);
       });
       grid.appendChild(card);
     });
@@ -905,10 +921,13 @@
       row.className = 'day-row' + (recipesForDay.length===0 ? ' empty-day' : '');
       const itemsHtml = recipesForDay.length===0
         ? 'Nothing planned'
-        : recipesForDay.map(r=>`
+        : recipesForDay.map(r=>{
+            const cook = (state.selections[r.id] && state.selections[r.id].cook) ? state.selections[r.id].cook : '';
+            return `
             <div class="day-chip" data-id="${r.id}">
-              ${escapeHtml(r.name)} <button title="Remove from this day">×</button>
-            </div>`).join('');
+              ${escapeHtml(r.name)}${cook ? ` <span class="cook-tag">— ${escapeHtml(cook)}</span>` : ''} <button title="Remove from this day">×</button>
+            </div>`;
+          }).join('');
       row.innerHTML = `<div class="day-name">${day}</div><div class="day-items">${itemsHtml}</div>`;
       row.querySelectorAll('.day-chip button').forEach(btn=>{
         btn.addEventListener('click', ()=>{
