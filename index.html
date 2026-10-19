@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Simple Recipe Box — Meal Planner</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#3C4A34">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Recipe Box">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@400;500;600;700&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -370,6 +378,44 @@
   .inline-form input{flex:1; min-width:0;}
   .invite-link{display:flex; gap:8px; margin-top:10px;}
   .invite-link input{flex:1; min-width:0; font-size:12.5px;}
+
+  /* ---- Recipe detail tools: scaler, cooking mode, photo ---- */
+  .scaled-note{font-size:12px; color:var(--ink-soft); font-weight:400;}
+  .detail-tools{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:10px 0 4px;}
+  .scale-row{display:inline-flex; align-items:center; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; background:var(--card);}
+  .scale-row span{font-size:12px; color:var(--ink-soft); padding:0 8px; letter-spacing:.3px;}
+  .scale-row button{border:none; border-left:1px solid var(--line); background:none; padding:6px 11px; font:600 13px 'Work Sans',sans-serif; color:var(--sage-dark); cursor:pointer; min-width:40px;}
+  .scale-row button.active{background:var(--sage-dark); color:#fff;}
+  .recipe-photo{display:block; max-width:100%; max-height:70vh; margin:10px 0; border:1px solid var(--line); border-radius:var(--radius);}
+  .photo-field{margin:4px 0 14px;}
+  .photo-row{display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
+  .photo-thumb{width:90px; height:90px; object-fit:cover; border:1px solid var(--line); border-radius:var(--radius);}
+
+  /* ---- Cooking mode ---- */
+  body.cooking{overflow:hidden;}
+  .cook-overlay{position:fixed; inset:0; z-index:1000; background:var(--paper); display:flex; flex-direction:column; padding:16px 18px calc(16px + env(safe-area-inset-bottom)); overflow-y:auto;}
+  .cook-top{display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:10px;}
+  .cook-title{font-family:'Zilla Slab',serif; font-weight:700; font-size:22px; color:var(--sage-dark); line-height:1.2;}
+  .cook-close{border:1px solid var(--line); background:var(--card); border-radius:50%; width:40px; height:40px; font-size:18px; cursor:pointer; flex:none; color:var(--sage-dark);}
+  .cook-ing-toggle{align-self:flex-start; background:none; border:none; color:var(--rust); font:600 14px 'Work Sans',sans-serif; padding:4px 0; cursor:pointer; text-decoration:underline;}
+  .cook-ings{margin:6px 0 10px; padding:12px 12px 12px 30px; background:var(--card); border:1px solid var(--line); border-radius:var(--radius); font-size:17px;}
+  .cook-ings li{margin-bottom:6px;}
+  .cook-step{flex:1; display:flex; flex-direction:column; justify-content:center; padding:20px 4px;}
+  .cook-count{font-size:13px; letter-spacing:1px; text-transform:uppercase; color:var(--mustard-deep); font-weight:600; margin-bottom:12px;}
+  .cook-text{font-family:'Zilla Slab',serif; font-size:clamp(24px, 5.5vw, 38px); line-height:1.35; color:var(--ink);}
+  .cook-nav{display:flex; gap:12px;}
+  .cook-nav .btn{flex:1; padding:16px; font-size:18px;}
+  .cook-nav .btn:disabled{opacity:.4;}
+  .cook-awake{text-align:center; font-size:12px; color:var(--ink-soft); min-height:16px; margin-top:10px;}
+
+  /* ---- Shopping list layout toggle ---- */
+  .shop-head{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px;}
+  .shop-head h3{margin-bottom:0 !important;}
+  .seg{display:inline-flex; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; background:var(--card);}
+  .seg button{border:none; background:none; padding:5px 10px; font:600 12.5px 'Work Sans',sans-serif; color:var(--sage-dark); cursor:pointer;}
+  .seg button + button{border-left:1px solid var(--line);}
+  .seg button.active{background:var(--sage-dark); color:#fff;}
+  ul.shop-list .from-recipes{display:block; font-size:11.5px; color:var(--ink-soft); text-decoration:none;}
 </style>
 </head>
 <body>
@@ -468,7 +514,13 @@
   <section class="view" id="view-shopping">
     <div class="shop-columns">
       <div class="shop-col">
-        <h3>From this week's recipes</h3>
+        <div class="shop-head">
+          <h3>From this week's recipes</h3>
+          <div class="seg" role="group" aria-label="Shopping list layout">
+            <button type="button" data-shopmode="recipe">By recipe</button>
+            <button type="button" data-shopmode="combined">Combined</button>
+          </div>
+        </div>
         <div id="shop-recipe-groups"></div>
       </div>
       <div class="shop-col">
@@ -499,7 +551,7 @@
       <div class="panel">
         <div id="invite-box">
           <h4>Invite someone</h4>
-          <p class="muted">Send them a link. They sign in with Google and land in this household. Links work for 7 days.</p>
+          <p class="muted">Send them a link. They sign in with Google and land in this household. Each link works for one person, for 7 days.</p>
           <button class="btn" id="invite-btn">Create invite link</button>
           <div class="invite-link" id="invite-result" style="display:none">
             <input type="text" id="invite-url" readonly>
@@ -510,6 +562,12 @@
         <div id="invite-member-note" style="display:none">
           <h4>Invite someone</h4>
           <p class="muted">Only the household owner can send invites.</p>
+        </div>
+
+        <div id="install-box" style="display:none">
+          <h4 style="margin-top:22px">Put it on your home screen</h4>
+          <p class="muted" id="install-text"></p>
+          <button class="btn small" id="install-btn" style="display:none">Install app</button>
         </div>
 
         <h4 style="margin-top:22px">Your name</h4>
@@ -624,7 +682,8 @@
             unit: (i && typeof i.unit === 'string') ? i.unit : ''
           }))
         : [],
-      steps: Array.isArray(r.steps) ? r.steps.filter(s=>typeof s === 'string') : []
+      steps: Array.isArray(r.steps) ? r.steps.filter(s=>typeof s === 'string') : [],
+      hasPhoto: r.hasPhoto === true
     };
   }
 
@@ -650,6 +709,8 @@
   let state = defaultData();
   let editingRecipeId = null;
   let viewingRecipeId = null;
+  let viewScale = 1;          // scaler on the recipe detail (resets per recipe)
+  let viewScaleFor = null;
   let suppressNextRemoteRender = false;
 
   // Targeted writes: each change saves only its own piece of data, so two
@@ -804,8 +865,11 @@
           const inv = await db.ref('invites/'+joinCode).once('value').then(s=>s.val()).catch(()=>null);
           const code = joinCode;
           clearJoinParam();
-          if(!inv || inv.expiresAt < Date.now()){
-            const msg = 'That invite link has expired or isn\'t valid anymore. Ask for a new one.';
+          const usedByOther = inv && inv.usedBy && inv.usedBy !== user.uid;
+          if(!inv || inv.expiresAt < Date.now() || usedByOther){
+            const msg = usedByOther
+              ? 'That invite link has already been used. Each link works for one person — ask for a new one.'
+              : 'That invite link has expired or isn\'t valid anymore. Ask for a new one.';
             if(hid){ enterHousehold(hid); alert(msg); }
             else await showSetup(user, u.name, msg);
             return;
@@ -893,11 +957,16 @@
       const updates = {};
       if(prevHousehold) updates['households/'+prevHousehold+'/members/'+user.uid] = null;
       updates['households/'+inv.household+'/members/'+user.uid] = {name, email: user.email || '', joinedWith: inv.code, joinedAt: TS};
+      updates['invites/'+inv.code+'/usedBy'] = user.uid;   // one-use: claims the link in the same write
       updates['users/'+user.uid] = {household: inv.household, name};
       await db.ref().update(updates);
       pendingInvite = null; prevHousehold = null;
       enterHousehold(inv.household);
-    }catch(err){ showError('setup-error', err); }
+    }catch(err){
+      if(err && /permission/i.test(err.code || err.message || '')){
+        showError('setup-error', 'That invite link has already been used or has expired. Ask for a new one.');
+      } else showError('setup-error', err);
+    }
     finally{ $('join-btn').disabled = false; }
   }
 
@@ -1102,7 +1171,7 @@
       card.innerHTML = `
         <div class="card-main">
           <h3>${escapeHtml(r.name)}</h3>
-          <div class="meta">${r.servings} serving${r.servings==1?'':'s'} · ${r.ingredients.length} ingredients</div>
+          <div class="meta">${r.servings} serving${r.servings==1?'':'s'} · ${r.ingredients.length} ingredients${r.hasPhoto ? ' · 📷' : ''}</div>
           <div class="tags">${r.tags.map(t=>`<span class="chip">${escapeHtml(t)}</span>`).join('')}</div>
         </div>
         <div class="plan-controls">
@@ -1162,6 +1231,7 @@
   function renderRecipeDetail(){
     const slot = document.getElementById('recipe-detail-slot');
     if(!viewingRecipeId){ slot.innerHTML=''; return; }
+    if(viewScaleFor !== viewingRecipeId){ viewScale = 1; viewScaleFor = viewingRecipeId; }
     const r = state.recipes.find(x=>x.id===viewingRecipeId);
     if(!r){ viewingRecipeId=null; slot.innerHTML=''; return; }
     slot.innerHTML = `
@@ -1174,9 +1244,18 @@
             <button class="btn secondary small" id="close-detail-btn">Close</button>
           </div>
         </div>
-        <div class="servings-badge">${r.servings} serving${r.servings==1?'':'s'}</div>
+        <div class="servings-badge">${servingsText(r.servings, viewScale)}</div>
+        <div class="detail-tools">
+          <div class="scale-row" role="group" aria-label="Scale recipe">
+            <span>Scale</span>
+            ${[0.5,1,2,3].map(f=>`<button type="button" data-scale="${f}" class="${f===viewScale?'active':''}">${factorLabel(f)}×</button>`).join('')}
+          </div>
+          <button class="btn small" id="cook-btn">👩‍🍳 Cooking mode</button>
+          ${r.hasPhoto ? '<button class="btn secondary small" id="photo-btn">📷 Original photo</button>' : ''}
+        </div>
+        <div id="photo-box"></div>
         <h4>Ingredients</h4>
-        <ul>${r.ingredients.map(i=>`<li>${formatIng(i)}</li>`).join('')}</ul>
+        <ul>${r.ingredients.map(i=>`<li>${formatIng(i, viewScale)}</li>`).join('')}</ul>
         <h4>Steps</h4>
         <ol>${r.steps.map(s=>`<li>${escapeHtml(s)}</li>`).join('')}</ol>
       </div>
@@ -1189,18 +1268,189 @@
         state.recipes = state.recipes.filter(x=>x.id!==r.id);
         delete state.selections[r.id];
         viewingRecipeId = null;
-        deleteRecipeRemote(r.id); renderRecipeGrid(); renderRecipeDetail();
+        deleteRecipeRemote(r.id); if(r.hasPhoto) deletePhoto(r.id); renderRecipeGrid(); renderRecipeDetail();
       }
     });
     document.getElementById('close-detail-btn').addEventListener('click', ()=>{
       viewingRecipeId = null; renderRecipeDetail();
     });
+    slot.querySelectorAll('[data-scale]').forEach(b=>{
+      b.addEventListener('click', ()=>{ viewScale = parseFloat(b.dataset.scale) || 1; renderRecipeDetail(); });
+    });
+    document.getElementById('cook-btn').addEventListener('click', ()=> openCookMode(r, viewScale));
+    const photoBtn = document.getElementById('photo-btn');
+    if(photoBtn) photoBtn.addEventListener('click', ()=> togglePhoto(r.id, photoBtn));
   }
 
-  function formatIng(i){
-    const amt = (i.amount !== undefined && i.amount !== null) ? String(i.amount).trim() : '';
+  function servingsText(n, f){
+    const base = n + ' serving' + (n==1 ? '' : 's');
+    if(!f || f === 1) return base;
+    const scaled = formatQty(n * f);
+    return scaled + ' serving' + (scaled === '1' ? '' : 's') + ' <span class="scaled-note">(' + factorLabel(f) + '× of ' + n + ')</span>';
+  }
+
+  // ---------- Original scan photo (stored separately so the recipe list stays fast) ----------
+  const photoCache = {};
+  function photoRef(recipeId){ return db.ref('households/'+household.id+'/photos/'+recipeId); }
+  function savePhoto(recipeId, dataUrl){
+    photoCache[recipeId] = dataUrl;
+    return photoRef(recipeId).set(dataUrl).catch(err=>{ console.error('Photo save failed', err); });
+  }
+  function deletePhoto(recipeId){
+    delete photoCache[recipeId];
+    photoRef(recipeId).remove().catch(()=>{});
+  }
+  async function togglePhoto(recipeId, btn){
+    const box = document.getElementById('photo-box');
+    if(box.innerHTML){ box.innerHTML = ''; btn.textContent = '📷 Original photo'; return; }
+    btn.textContent = 'Loading…';
+    try{
+      if(!photoCache[recipeId]) photoCache[recipeId] = (await photoRef(recipeId).once('value')).val();
+      const src = photoCache[recipeId];
+      if(!src || !/^data:image\//.test(src)){ box.innerHTML = '<p class="muted">No photo saved for this recipe.</p>'; btn.textContent = '📷 Original photo'; return; }
+      box.innerHTML = '<img class="recipe-photo" alt="Original recipe photo">';
+      box.querySelector('img').src = src;
+      btn.textContent = 'Hide photo';
+    }catch(err){
+      box.innerHTML = '<p class="muted">Couldn\'t load the photo.</p>'; btn.textContent = '📷 Original photo';
+    }
+  }
+
+  // ---------- Cooking mode: big text, one step at a time, screen stays awake ----------
+  let wakeLock = null;
+  async function requestWakeLock(){
+    try{
+      if('wakeLock' in navigator){
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', ()=>{ wakeLock = null; });
+        return true;
+      }
+    }catch(err){ /* not allowed right now (e.g. low battery) */ }
+    return false;
+  }
+  function releaseWakeLock(){ try{ if(wakeLock) wakeLock.release(); }catch(e){} wakeLock = null; }
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState === 'visible' && document.getElementById('cook-overlay') && !wakeLock) requestWakeLock();
+  });
+
+  function openCookMode(r, factor){
+    closeCookMode();
+    let stepIdx = 0, showIngs = r.steps.length === 0;
+    const ov = document.createElement('div');
+    ov.id = 'cook-overlay';
+    ov.className = 'cook-overlay';
+    ov.setAttribute('role', 'dialog');
+    ov.setAttribute('aria-label', 'Cooking mode: ' + r.name);
+    document.body.appendChild(ov);
+    document.body.classList.add('cooking');
+
+    function draw(){
+      const total = r.steps.length;
+      ov.innerHTML = `
+        <div class="cook-top">
+          <div class="cook-title">${escapeHtml(r.name)}${factor && factor !== 1 ? ` <span class="scaled-note">${factorLabel(factor)}×</span>` : ''}</div>
+          <button class="cook-close" aria-label="Exit cooking mode">✕</button>
+        </div>
+        <button class="cook-ing-toggle">${showIngs ? 'Hide' : 'Show'} ingredients (${r.ingredients.length})</button>
+        <ul class="cook-ings" style="display:${showIngs ? 'block' : 'none'}">${r.ingredients.map(i=>`<li>${formatIng(i, factor)}</li>`).join('')}</ul>
+        <div class="cook-step">
+          ${total ? `<div class="cook-count">Step ${stepIdx+1} of ${total}</div>
+          <div class="cook-text">${escapeHtml(r.steps[stepIdx])}</div>` : '<div class="cook-text">No steps written for this recipe.</div>'}
+        </div>
+        <div class="cook-nav">
+          <button class="btn secondary cook-prev" ${stepIdx===0 ? 'disabled' : ''}>← Back</button>
+          ${stepIdx < total-1 ? '<button class="btn cook-next">Next →</button>' : '<button class="btn cook-done">Done ✓</button>'}
+        </div>
+        <div class="cook-awake" id="cook-awake"></div>
+      `;
+      ov.querySelector('.cook-close').addEventListener('click', closeCookMode);
+      ov.querySelector('.cook-ing-toggle').addEventListener('click', ()=>{ showIngs = !showIngs; draw(); });
+      ov.querySelector('.cook-prev').addEventListener('click', ()=>{ if(stepIdx>0){ stepIdx--; draw(); } });
+      const next = ov.querySelector('.cook-next'); if(next) next.addEventListener('click', ()=>{ stepIdx++; draw(); });
+      const done = ov.querySelector('.cook-done'); if(done) done.addEventListener('click', closeCookMode);
+      ov.querySelector('#cook-awake').textContent = wakeLock ? 'Screen will stay on while cooking mode is open.' : '';
+    }
+    ov._keys = e=>{
+      if(e.key === 'Escape') closeCookMode();
+      else if(e.key === 'ArrowRight' && stepIdx < r.steps.length-1){ stepIdx++; draw(); }
+      else if(e.key === 'ArrowLeft' && stepIdx > 0){ stepIdx--; draw(); }
+    };
+    document.addEventListener('keydown', ov._keys);
+    // swipe left/right to change steps
+    let sx = null;
+    ov.addEventListener('touchstart', e=>{ sx = e.touches[0].clientX; }, {passive:true});
+    ov.addEventListener('touchend', e=>{
+      if(sx === null) return;
+      const dx = e.changedTouches[0].clientX - sx; sx = null;
+      if(Math.abs(dx) < 60) return;
+      if(dx < 0 && stepIdx < r.steps.length-1){ stepIdx++; draw(); }
+      else if(dx > 0 && stepIdx > 0){ stepIdx--; draw(); }
+    }, {passive:true});
+    draw();
+    requestWakeLock().then(()=>{ const a = document.getElementById('cook-awake'); if(a) a.textContent = wakeLock ? 'Screen will stay on while cooking mode is open.' : ''; });
+  }
+  function closeCookMode(){
+    const ov = document.getElementById('cook-overlay');
+    if(ov){ document.removeEventListener('keydown', ov._keys); ov.remove(); }
+    document.body.classList.remove('cooking');
+    releaseWakeLock();
+  }
+
+  function formatIng(i, factor){
+    let amt = (i.amount !== undefined && i.amount !== null) ? String(i.amount).trim() : '';
+    if(factor && factor !== 1 && amt){ const scaled = scaleAmount(amt, factor); if(scaled !== null) amt = scaled; }
     return escapeHtml(`${amt} ${i.unit||''} ${i.name}`.replace(/\s+/g,' ').trim());
   }
+
+  // ---------- Amount math: understands "2", "1.5", "1/2", "1 1/2", "1½", and ranges "1/8 to 1/4", "6-8" ----------
+  const UNICODE_FRACTIONS = {'½':1/2,'⅓':1/3,'⅔':2/3,'¼':1/4,'¾':3/4,'⅕':1/5,'⅖':2/5,'⅗':3/5,'⅘':4/5,'⅙':1/6,'⅚':5/6,'⅛':1/8,'⅜':3/8,'⅝':5/8,'⅞':7/8};
+  function parseQtyPart(t){
+    t = String(t).trim().replace(/\u2044/g,'/');
+    if(!t) return null;
+    let m;
+    if((m = t.match(/^(\d+)?\s*([½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞])$/))) return (m[1] ? +m[1] : 0) + UNICODE_FRACTIONS[m[2]];
+    if((m = t.match(/^(\d+)\s+(\d+)\s*\/\s*(\d+)$/))) return +m[3] ? +m[1] + (+m[2])/(+m[3]) : null;
+    if((m = t.match(/^(\d+)\s*\/\s*(\d+)$/))) return +m[2] ? (+m[1])/(+m[2]) : null;
+    if(/^(\d+\.?\d*|\.\d+)$/.test(t)) return parseFloat(t);
+    return null;
+  }
+  // Returns {values:[...], seps:[...]} or null if the text isn't a plain amount (e.g. "a handful").
+  function parseQty(text){
+    if(text === undefined || text === null) return null;
+    const str = String(text).trim();
+    if(!str) return null;
+    const pieces = str.split(/(\s*(?:\bto\b|-|–|—)\s*)/i);
+    const values = [], seps = [];
+    for(let k=0; k<pieces.length; k++){
+      if(k % 2){ seps.push(pieces[k]); continue; }
+      const v = parseQtyPart(pieces[k]);
+      if(v === null) return null;
+      values.push(v);
+    }
+    return values.length ? {values, seps} : null;
+  }
+  function formatQty(n){
+    if(!isFinite(n) || n <= 0) return '0';
+    let whole = Math.floor(n + 1e-9);
+    const frac = n - whole;
+    if(frac < 0.02) return String(whole);
+    if(frac > 0.98) return String(whole + 1);
+    for(const d of [2,3,4,6,8]){
+      const num = Math.round(frac * d);
+      if(num > 0 && num < d && Math.abs(num/d - frac) < 0.02){
+        return (whole ? whole + ' ' : '') + num + '/' + d;
+      }
+    }
+    return String(Math.round(n * 100) / 100);
+  }
+  function scaleAmount(text, factor){
+    const q = parseQty(text);
+    if(!q) return null;
+    let out = formatQty(q.values[0] * factor);
+    for(let k=1; k<q.values.length; k++) out += q.seps[k-1] + formatQty(q.values[k] * factor);
+    return out;
+  }
+  function factorLabel(f){ return f === 0.5 ? '½' : formatQty(f); }
 
   // ---------- Recipe editor ----------
   document.getElementById('new-recipe-btn').addEventListener('click', ()=>{
@@ -1221,6 +1471,8 @@
     showScanProgress('Reading photo…');
     try{
       const {base64, mimeType} = await prepareImageForUpload(file, 2000, 0.92);
+      let keepPhoto = null;
+      try{ const small = await prepareImageForUpload(file, 1000, 0.7); keepPhoto = 'data:image/jpeg;base64,' + small.base64; }catch(e){}
       const scanRecipeFn = firebase.app().functions().httpsCallable('scanRecipe');
       const response = await scanRecipeFn({imageBase64: base64, mimeType});
       const parsed = response.data;
@@ -1230,7 +1482,7 @@
       }
       parsed.tags = parsed.tags || [];
       clearScanProgress();
-      openEditor(null, parsed, "Read from your photo — double-check ingredients, amounts, and steps before saving.");
+      openEditor(null, parsed, "Read from your photo — double-check ingredients, amounts, and steps before saving.", keepPhoto);
     } catch(err){
       console.error('Scan failed', err);
       const msg = (err && err.message) ? err.message : 'Something went wrong reading that photo.';
@@ -1277,9 +1529,12 @@
     });
   }
 
-  function openEditor(recipe, prefill, noteText){
+  function openEditor(recipe, prefill, noteText, scannedPhoto){
     const slot = document.getElementById('recipe-editor-slot');
     const isNew = !recipe;
+    // photo: 'keep' = leave as is, a data URL = new photo to save, null = remove
+    let photoChange = scannedPhoto ? scannedPhoto : 'keep';
+    const hadPhoto = !!(recipe && recipe.hasPhoto);
     const draft = recipe ? JSON.parse(JSON.stringify(recipe)) : Object.assign(
       {id: uid(), name:'', servings:4, tags:[], ingredients:[{name:'',amount:'',unit:''}], steps:['']},
       prefill || {}
@@ -1309,6 +1564,8 @@
             </div>
           </div>
 
+          <div class="photo-field" id="photo-field"></div>
+
           <div class="field" style="margin-bottom:6px;"><label>Ingredients</label></div>
           <div id="ing-list"></div>
           <button class="add-line" id="add-ing">+ add ingredient</button>
@@ -1325,6 +1582,7 @@
       `;
       renderIngRows();
       renderStepRows();
+      renderPhotoField();
 
       document.getElementById('add-ing').addEventListener('click', ()=>{
         draft.ingredients.push({name:'',amount:'',unit:''});
@@ -1364,6 +1622,29 @@
       });
     }
 
+    function renderPhotoField(){
+      const box = document.getElementById('photo-field');
+      const showing = photoChange === 'keep' ? hadPhoto : !!photoChange;
+      if(showing){
+        box.innerHTML = `<div class="photo-row">
+            ${photoChange && photoChange !== 'keep' ? '<img class="photo-thumb" alt="">' : '<span class="muted">📷 Photo saved with this recipe</span>'}
+            <button type="button" class="btn small secondary" id="photo-remove">Remove photo</button>
+          </div>`;
+        if(photoChange && photoChange !== 'keep') box.querySelector('img').src = photoChange;
+        box.querySelector('#photo-remove').addEventListener('click', ()=>{ photoChange = null; renderPhotoField(); });
+      } else {
+        box.innerHTML = `<button type="button" class="add-line" id="photo-attach">📷 Attach a photo of the recipe</button>
+          <input type="file" accept="image/*" id="photo-input" style="display:none">`;
+        const input = box.querySelector('#photo-input');
+        box.querySelector('#photo-attach').addEventListener('click', ()=> input.click());
+        input.addEventListener('change', async ()=>{
+          const f = input.files[0]; if(!f) return;
+          try{ const small = await prepareImageForUpload(f, 1000, 0.7); photoChange = 'data:image/jpeg;base64,' + small.base64; renderPhotoField(); }
+          catch(e){ alert("Couldn't read that photo."); }
+        });
+      }
+    }
+
     function renderStepRows(){
       const box = document.getElementById('step-list');
       box.innerHTML = '';
@@ -1394,6 +1675,9 @@
         .filter(i=>i.name.trim())
         .map(i=>({name:i.name.trim(), amount: (i.amount||'').toString().trim(), unit:(i.unit||'').trim()}));
       draft.steps = draft.steps.map(s=>s.trim()).filter(Boolean);
+      if(photoChange === null){ draft.hasPhoto = false; if(hadPhoto) deletePhoto(draft.id); }
+      else if(photoChange !== 'keep'){ draft.hasPhoto = true; savePhoto(draft.id, photoChange); }
+      else draft.hasPhoto = hadPhoto;
 
       if(isNew){
         state.recipes.push(draft);
@@ -1481,11 +1765,80 @@
       });
   }
 
+  // Shopping list layout is a per-device choice (one person may like it combined, another by recipe).
+  let shopMode = 'recipe';
+  try{ shopMode = localStorage.getItem('srb-shopmode') === 'combined' ? 'combined' : 'recipe'; }catch(e){}
+  document.querySelectorAll('[data-shopmode]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      shopMode = b.dataset.shopmode;
+      try{ localStorage.setItem('srb-shopmode', shopMode); }catch(e){}
+      renderShopping();
+    });
+  });
+
+  // Merge the same item across recipes: "chicken breast" in two recipes becomes one line.
+  // Checking a combined line checks it off in every recipe it came from, so both layouts stay in sync.
+  function combinedShoppingItems(chosen){
+    const groups = new Map();
+    chosen.forEach(({recipe})=>{
+      recipe.ingredients.forEach((ing, idx)=>{
+        const name = (ing.name || '').trim();
+        if(!name) return;
+        const unit = (ing.unit || '').trim();
+        const key = name.toLowerCase().replace(/\s+/g,' ') + '|' + unit.toLowerCase().replace(/s$/,'');
+        if(!groups.has(key)) groups.set(key, {name, unit, amounts: [], keys: [], recipes: []});
+        const g = groups.get(key);
+        g.amounts.push((ing.amount !== undefined && ing.amount !== null) ? String(ing.amount).trim() : '');
+        g.keys.push(recipe.id + '::' + idx);
+        if(!g.recipes.includes(recipe.name)) g.recipes.push(recipe.name);
+      });
+    });
+    return [...groups.values()].map(g=>{
+      const filled = g.amounts.filter(Boolean);
+      let amount = '';
+      if(filled.length){
+        const parsed = filled.map(parseQty);
+        const allSingle = parsed.every(q=> q && q.values.length === 1);
+        if(allSingle) amount = formatQty(parsed.reduce((t,q)=> t + q.values[0], 0));
+        else amount = filled.join(' + ');
+        if(filled.length < g.amounts.length) amount += ' + some';
+      }
+      return {text: `${amount} ${g.unit} ${g.name}`.replace(/\s+/g,' ').trim(), keys: g.keys, recipes: g.recipes};
+    }).sort((a,b)=> a.text.replace(/^[\d\s\/.+-]+/,'').localeCompare(b.text.replace(/^[\d\s\/.+-]+/,'')));
+  }
+  function saveShoppingCheckedMany(keys, val){
+    markSaving();
+    const updates = {};
+    keys.forEach(k=>{ updates['shoppingChecked/'+k] = val; });
+    dataRef.update(updates).then(markSynced).catch(onSaveError);
+  }
+
   function renderShopping(){
     const box = document.getElementById('shop-recipe-groups');
     const chosen = selectedRecipesInOrder();
+    document.querySelectorAll('[data-shopmode]').forEach(b=> b.classList.toggle('active', b.dataset.shopmode === shopMode));
     if(chosen.length===0){
       box.innerHTML = '<div class="empty" style="padding:14px 0;">Check off recipes in the Recipes tab to build this list.</div>';
+    } else if(shopMode === 'combined'){
+      box.innerHTML = '';
+      const ul = document.createElement('ul');
+      ul.className = 'shop-list combined';
+      combinedShoppingItems(chosen).forEach(item=>{
+        const checked = item.keys.every(k=> !!state.shoppingChecked[k]);
+        const li = document.createElement('li');
+        if(checked) li.classList.add('checked');
+        li.innerHTML = `
+          <input type="checkbox" ${checked?'checked':''}>
+          <span class="item-text">${escapeHtml(item.text)}${item.recipes.length > 1 ? `<span class="from-recipes">${escapeHtml(item.recipes.join(', '))}</span>` : ''}</span>
+        `;
+        li.querySelector('input').addEventListener('change', e=>{
+          item.keys.forEach(k=>{ state.shoppingChecked[k] = e.target.checked; });
+          saveShoppingCheckedMany(item.keys, e.target.checked);
+          li.classList.toggle('checked', e.target.checked);
+        });
+        ul.appendChild(li);
+      });
+      box.appendChild(ul);
     } else {
       box.innerHTML = '';
       chosen.forEach(({recipe, sel})=>{
@@ -1562,6 +1915,37 @@
 
   // ---------- init ----------
   startSync();
+
+  // "Put it on your home screen" card in the Household tab
+  (function setupInstallCard(){
+    const standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+    if(standalone) return;   // already installed
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const box = $('install-box'), text = $('install-text'), btn = $('install-btn');
+    if(isIOS){
+      box.style.display = 'block';
+      text.textContent = 'In Safari, tap the Share button, then "Add to Home Screen". It opens full-screen like a regular app.';
+    }
+    let deferred = null;
+    window.addEventListener('beforeinstallprompt', e=>{
+      e.preventDefault(); deferred = e;
+      box.style.display = 'block';
+      text.textContent = 'Install Simple Recipe Box as an app with its own icon.';
+      btn.style.display = 'inline-block';
+    });
+    btn.addEventListener('click', async ()=>{
+      if(!deferred) return;
+      deferred.prompt();
+      try{ await deferred.userChoice; }catch(e){}
+      deferred = null; box.style.display = 'none';
+    });
+    window.addEventListener('appinstalled', ()=>{ box.style.display = 'none'; });
+  })();
+
+  // Install-to-home-screen support (works offline-ish; data still syncs through Firebase).
+  if('serviceWorker' in navigator && location.protocol === 'https:'){
+    window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+  }
 })();
 </script>
 </body>

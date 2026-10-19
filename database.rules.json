@@ -1,0 +1,69 @@
+{
+  "rules": {
+    "recipeBox": {
+      ".read": false,
+      ".write": false
+    },
+
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+
+    "households": {
+      "$hid": {
+        ".read": "auth != null && data.child('members').child(auth.uid).exists()",
+
+        "owner": {
+          ".write": "auth != null && !data.exists() && newData.val() === auth.uid"
+        },
+        "name": {
+          ".write": "auth != null && newData.parent().child('owner').val() === auth.uid",
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60"
+        },
+        "createdAt": {
+          ".write": "auth != null && !data.exists() && newData.parent().child('owner').val() === auth.uid"
+        },
+
+        "members": {
+          "$mid": {
+            ".write": "auth != null && (($mid === auth.uid && !newData.exists() && data.exists()) || (!newData.exists() && root.child('households').child($hid).child('owner').val() === auth.uid) || ($mid === auth.uid && data.exists() && newData.exists() && newData.child('joinedWith').val() === data.child('joinedWith').val()) || ($mid === auth.uid && !data.exists() && newData.child('joinedWith').val() === 'owner' && !root.child('households').child($hid).child('owner').exists() && newData.parent().parent().child('owner').val() === auth.uid) || ($mid === auth.uid && !data.exists() && newData.child('joinedWith').isString() && newData.child('joinedWith').val() !== 'owner' && root.child('invites').child(newData.child('joinedWith').val()).child('household').val() === $hid && root.child('invites').child(newData.child('joinedWith').val()).child('expiresAt').val() > now && !root.child('invites').child(newData.child('joinedWith').val()).child('usedBy').exists() && newData.parent().parent().parent().parent().child('invites').child(newData.child('joinedWith').val()).child('usedBy').val() === auth.uid))",
+            ".validate": "!newData.exists() || (newData.child('name').isString() && newData.child('name').val().length <= 60)"
+          }
+        },
+
+        "data": {
+          ".write": "auth != null && newData.parent().child('members').child(auth.uid).exists()"
+        },
+
+        "photos": {
+          "$rid": {
+            ".write": "auth != null && root.child('households').child($hid).child('members').child(auth.uid).exists()",
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length < 700000)"
+          }
+        },
+
+        "$other": {
+          ".write": false
+        }
+      }
+    },
+
+    "invites": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && !data.exists() && newData.child('createdBy').val() === auth.uid && root.child('households').child(newData.child('household').val()).child('owner').val() === auth.uid",
+        "usedBy": {
+          ".write": "auth != null && !data.exists() && newData.val() === auth.uid && data.parent().exists() && data.parent().child('expiresAt').val() > now"
+        }
+      }
+    },
+
+    "scanUsage": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}
